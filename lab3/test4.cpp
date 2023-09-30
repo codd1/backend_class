@@ -1,3 +1,5 @@
+// #4: UDP로 데이터 받기
+
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -27,9 +29,9 @@ int main(){
     char buf2[65536];
     memset(&sin, 0, sizeof(sin));
     socklen_t sin_size = sizeof(sin);
-    numBytes = recvfrom(s, buf2, sizeof(buf2), 0, (struct sockaddr*) &sin, &sin_size);
-    cout << "Recevied: "<<numBytes<<endl;
-    cout << "From "<< inet_ntoa(sin.sin_addr)<<endl;
+    numBytes = recvfrom(s, buf2, sizeof(buf2), 0, (struct sockaddr*) &sin, &sin_size);      // 보낸 사람의 주소를 담을 변수 크기
+    cout << "Recevied: "<< numBytes << endl;
+    cout << "From "<< inet_ntoa(sin.sin_addr) << endl;
 
     close(s);
     return 0;
