@@ -1,0 +1,20 @@
+// #1: proto 파일 생성
+
+syntax = "proto2";          // proto 파일 자체의 문법 버전
+package mju;                // C++에서 namespace mju;
+message Person {            // C++에서 class Person
+    required string name = 1;       // required: 반드시 지정해야되는 필드. (추후에 삭제 불가) / = 1: 내부적으로 이 필드를 구분하기 위한 번호
+    optional int32 id = 2;          // optional: 없어도 되는 필드. (추후에 삭제 가능)
+
+    enum PhoneType {        // C++에서 class Person 안의 enum
+        MOBILE = 0;
+        HOME = 1;
+    }
+
+    message PhoneNumber {           // class Person 안에 nested class로, class PhoneNumber
+        optional string number = 1;
+        optional PhoneType type = 2 [default = HOME];       // [default = HOME]: 기본 값 지정
+    }
+    
+    repeated PhoneNumber phones = 4;        // repeated: 배열 형태의 필드 선언. 0개면 없는 것이나 마찬가지이므로 암묵적으로 optional임.
+}
