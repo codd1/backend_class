@@ -14,7 +14,7 @@ def main(argv):
     }
 
     s = json.dumps(obj1, indent=2)
-    obj2 = json.loads(s)                # JSON 문자열로부터 python dict 객체를 생성한다. (= desrialize한다)
+    obj2 = json.loads(s)                # JSON 문자열로부터 python dict 객체를 생성한다. (= deserialize한다)
     print(obj2['name'], obj2['id'], obj2['work']['address'])
     print(obj1 == obj2)
 
