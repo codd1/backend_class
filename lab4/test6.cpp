@@ -1,4 +1,4 @@
-// #6: UDP로 Protobuf 전송 (완성x)
+// #6: UDP로 Protobuf 전송 (UDP echo server)
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -30,7 +30,7 @@ int main(){
     
     const string s = p->SerializeAsString();
     cout << "Length:" << s.length() << endl;
-    cout << s << endl;
+    cout << s << endl << endl;
 
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if(sock<0)return 1;
