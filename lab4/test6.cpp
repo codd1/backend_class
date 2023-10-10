@@ -55,7 +55,7 @@ int main(){
 
 
     Person *p2 = new Person;        // 객체 생성
-    p2->ParseFromString(s2);
+    p2->ParseFromString(string(s2, numBytes));
     cout << "Name:" << p2->name() << endl;
     cout << "ID:" << p2->id() << endl;
     for (int i = 0; i < p2->phones_size(); ++i) {
