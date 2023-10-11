@@ -17,7 +17,7 @@ int main(){
     memset(&sin, 0, sizeof(sin));
     sin.sin_family = AF_INET;
     sin.sin_addr.s_addr = INADDR_ANY;
-    sin.sin_port = htons(20000 + '172.31.176.0/24');
+    sin.sin_port = htons(20000 + 176);
     if(bind(passiveSock, (struct sockaddr *)&sin, sizeof(sin)) < 0){
         cerr << "bind() failed: " << strerror(errno) << endl;
         return 1;

@@ -22,7 +22,7 @@ int main(){
     sin.sin_family = AF_INET;
     sin.sin_addr.s_addr = inet_addr("127.0.0.1");
     //sin.sin_port = htons(10001);
-    sin.sin_port = htons(20000 + '172.31.176.0/24');        // test10~11.cpp 작동을 위한 포트 변경
+    sin.sin_port = htons(20000 + 176);        // test10~11.cpp 작동을 위한 포트 변경
     if(connect(s, (struct sockaddr *) &sin, sizeof(sin)) < 0){
         cerr << "connect() failed: " << strerror(errno) << endl;
         return 1;
