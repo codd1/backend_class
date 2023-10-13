@@ -1,4 +1,4 @@
-// #8: 연결이 끊겼을 때 recv() 함수의 동작
+// #9: recv() 가 일부 데이터만 반환할 때
 
 #include <arpa/inet.h>
 #include <errno.h>
