@@ -23,7 +23,7 @@ int main(){
     memset(&servSin, 0, sizeof(servSin));
     servSin.sin_family = AF_INET;
     servSin.sin_addr.s_addr = INADDR_ANY;
-    servSin.sin_port = htons(20000 + '172.31.176.0/24');
+    servSin.sin_port = htons(20000 + 176);
     if (bind(s, (struct sockaddr *) &servSin, sizeof(servSin)) < 0) {       // 내 socket의 port 번호를 명시하기 위해 bind() 함수 사용
                                                                     // 내 socket의 port 번호를 명시하지 않으면 -> 빈 소켓 번호 아무거나 배정됨
         cerr << strerror(errno) << endl;

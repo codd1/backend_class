@@ -21,7 +21,7 @@ int main(){
     memset(&sin, 0, sizeof(sin));
     sin.sin_family = AF_INET;
     sin.sin_addr.s_addr = INADDR_ANY;
-    sin.sin_port = htons(10000 + '172.31.176.0/24');
+    sin.sin_port = htons(10000 + 176);
     if (bind(s, (struct sockaddr *) &sin, sizeof(sin)) < 0) {       // 내 socket의 port 번호를 명시하기 위해 bind() 함수 사용
                                                                     // 내 socket의 port 번호를 명시하지 않으면 -> 빈 소켓 번호 아무거나 배정됨
         cerr << strerror(errno) << endl;
