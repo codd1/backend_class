@@ -1,4 +1,5 @@
 // #5: 다른 언어와의 호환성
+// 실행: $ g++ -o test5 test5.cpp person.pb.cc -lprotobuf
 
 #include <fstream>
 #include <string>

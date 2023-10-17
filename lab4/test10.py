@@ -1,4 +1,5 @@
 # #10: JSON Serialize - 중첩된 Array
+# 실행: python3 ./test10.py 
 
 import json
 import sys

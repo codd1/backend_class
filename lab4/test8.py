@@ -1,4 +1,5 @@
 # #8: JSON Serialize - JSON Array
+# 실행: python3 ./test8.py 
 
 import json
 import sys

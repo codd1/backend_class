@@ -1,4 +1,5 @@
 # #7: JSON Serialize 기초
+# 실행: python3 ./test7.py 
 
 import json
 import sys

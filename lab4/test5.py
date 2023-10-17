@@ -1,3 +1,6 @@
+# #5: 다른 언어와의 호환성
+# 실행: python3 ./test5.py 
+
 import person_pb2
 import sys
 

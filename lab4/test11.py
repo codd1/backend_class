@@ -1,4 +1,5 @@
 # #11: JSON Deserialize
+# 실행: python3 ./test11.py 
 
 import json
 import sys

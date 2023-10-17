@@ -1,4 +1,5 @@
 // #3: C++에서 Serialize 해보기
+// 실행: $ g++ -o test3 test3.cpp person.pb.cc -lprotobuf
 
 #include <fstream>
 #include <string>

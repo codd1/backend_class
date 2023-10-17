@@ -1,4 +1,5 @@
 // #4: C++에서 Deserialize 해보기
+// 실행: $ g++ -o test4 test4.cpp person.pb.cc -lprotobuf
 
 #include <fstream>
 #include <string>

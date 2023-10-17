@@ -1,4 +1,5 @@
 # #12: JSON을 UDP로 전송
+# 실행: python3 ./test12.py 
 
 import json
 import sys

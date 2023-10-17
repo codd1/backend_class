@@ -1,4 +1,5 @@
 # #9: JSON Serialize - 중첩된 JSON object
+# 실행: python3 ./test9.py 
 
 import json
 import sys
