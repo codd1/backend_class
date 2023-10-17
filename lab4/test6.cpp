@@ -1,4 +1,5 @@
 // #6: UDP로 Protobuf 전송 (UDP echo server)
+// 실행: $ g++ -o test6 test6.cpp person.pb.cc -lprotobuf
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
