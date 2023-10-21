@@ -20,8 +20,8 @@ int main(){
     struct sockaddr_in sin;
     memset(&sin, 0, sizeof(sin));
     sin.sin_family = AF_INET;
-    sin.sin_addr.s_addr = INADDR_ANY;
-    sin.sin_port = htons(10000 + 176);
+    sin.sin_port = htons(10176);
+    sin.sin_addr.s_addr = inet_addr("127.0.0.1");
     if (bind(s, (struct sockaddr *) &sin, sizeof(sin)) < 0) {       // 내 socket의 port 번호를 명시하기 위해 bind() 함수 사용
                                                                     // 내 socket의 port 번호를 명시하지 않으면 -> 빈 소켓 번호 아무거나 배정됨
         cerr << strerror(errno) << endl;
@@ -32,7 +32,7 @@ int main(){
 
     memset(&sin, 0, sizeof(sin));
     sin.sin_family = AF_INET;
-    sin.sin_port = htons(10001);
+    sin.sin_port = htons(20176);
     sin.sin_addr.s_addr = inet_addr("127.0.0.1");
 
     int numBytes = sendto(s, buf.c_str(), buf.length(), 0, (struct sockaddr*) &sin, sizeof(sin));
