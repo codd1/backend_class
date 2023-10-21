@@ -29,11 +29,11 @@ int main(){
     // bind()는 client든 server든 관계 없이 할 수 있다.
     // 다만, 통상적으로 서버의 port가 미리 정해져야 client가 요청을 보낼 수 있으므로 '대개 서버 측에서는 bind()를 호출'한다.
 
-    while(1){
-        char buf[65536];
-        struct sockaddr_in clientSin;
-        socklen_t client_sin_size = sizeof(clientSin);
+    char buf[65536];
+    struct sockaddr_in clientSin;
+    socklen_t client_sin_size = sizeof(clientSin);
 
+    while(1){
         int numBytes = recvfrom(s, buf, sizeof(buf), 0, (struct sockaddr*)&clientSin, &client_sin_size);
         if(numBytes < 0){      // 에러인 경우(-1) 일부만 수신하는 경우는 없다.
             break;
