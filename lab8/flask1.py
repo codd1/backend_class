@@ -1,3 +1,5 @@
+#1. Flask 이용한 Python App 작성
+
 from flask import Flask
 
 app = Flask(__name__)
