@@ -60,31 +60,32 @@ public:
             threads.emplace_back(thread(&Server::WorkerThread, this));
         }
 
-        while (!stop_flag) {
-            fd_set read_fds = fd_set_;
+        while (1) {
+            if (stop_flag){
+                break;
+            }
+            fd_set read_fds = rfds;
             int active_socket_count = select(max_fd + 1, &read_fds, nullptr, nullptr, nullptr);
 
-            if (active_socket_count < 0) {
+            if (active_socket_count <= 0) {     // 0인 경우는 timeout인 경우
                 cerr << "select() failed: " << strerror(errno) << endl;
-                exit(1);
+                break;
             }
-
+            // 소켓이 읽기 가능한 상태
+            // 새로운 클라이언트가 서버에 연결을 시도하면 select 함수가 수동 소켓에 대한 읽기 이벤트를 감지
             if (FD_ISSET(passive_sock, &read_fds)) {
                 AcceptConnection();
             }
 
             for (int i = 0; i < clients.size(); i++) {
                 Client &client = clients[i];
+                cout << &clients[i] << endl;
                 if (FD_ISSET(client.GetSocket(), &read_fds)) {
+                    cout << "if문 진입 완료" << endl;
                     ReceiveData(client);
                 }
             }
         }
-    }
-
-    void Stop() {
-        stop_flag = true;
-        cv.notify_one();
     }
 
 private:
@@ -114,8 +115,8 @@ private:
             exit(1);
         }
 
-        FD_ZERO(&fd_set_);
-        FD_SET(passive_sock, &fd_set_);
+        FD_ZERO(&rfds);
+        FD_SET(passive_sock, &rfds);
         max_fd = passive_sock;
     }
 
@@ -130,7 +131,7 @@ private:
         }
 
         SetNonBlocking(client_sock);
-        FD_SET(client_sock, &fd_set_);
+        FD_SET(client_sock, &rfds);
         max_fd = max(max_fd, client_sock);
 
         {
@@ -155,22 +156,24 @@ private:
                 cout << "Socket " << socket << " 연결 종료" << endl;
             } else {
                 cerr << "recv() failed: " << strerror(errno) << endl;
-                exit(1);
             }
 
+            // 클라이언트 벡터에서 해당 클라이언트 정리 (제거)
             close(socket);
-            FD_CLR(socket, &fd_set_);
+            FD_CLR(socket, &rfds);
             {
                 unique_lock<mutex> lock(m);
                 clients.erase(remove_if(clients.begin(), clients.end(), [socket](const Client &c) { return c.GetSocket() == socket; }), clients.end());
             }
+            exit(1);
         } else {
+            cout << buffer << endl;
             incoming_data.insert(incoming_data.end(), buffer, buffer + received_bytes);
-            ProcessData(client);
+            ProcessReceicedData(client);
         }
     }
 
-    void ProcessData(Client &client) {
+    void ProcessReceicedData(Client &client) {
         int socket = client.GetSocket();
         vector<char> &incoming_data = client.GetReceivedData();
 
@@ -199,26 +202,28 @@ private:
 
             {
                 unique_lock<mutex> lock(m);
-
+                
+                // 스레드 대기 상태(wait) -> 대기 중인 클라이언트가 없고 stop flag가 설정되었을 때 스레드 종료
                 cv.wait(lock, [this] { return !clients.empty() || stop_flag; });
 
                 if (stop_flag) {
                     break;
                 }
 
+                // 대기 중인 클라이언트가 있을 때 클라이언트를 가져오고 리스트에서 제거
                 if (!clients.empty()) {
                     c = move(clients.front());
                     clients.erase(clients.begin());
                 }
             }
 
-            ProcessData(c);
+            ProcessReceicedData(c);
         }
     }
 
 private:
     int passive_sock;
-    fd_set fd_set_;
+    fd_set rfds;
     int max_fd;
     vector<Client> clients;
 
@@ -232,6 +237,7 @@ private:
 };
 
 int main(int argc, char *argv[]) {
+    // ./server 9176 3
     if (argc != 3) {
         return 1;
     }
@@ -240,7 +246,6 @@ int main(int argc, char *argv[]) {
     int num_thread = stoi(argv[2]);
 
     Server server(port, num_thread);
-
     server.Run();
 
     return 0;
