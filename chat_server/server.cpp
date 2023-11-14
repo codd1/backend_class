@@ -18,6 +18,14 @@
 using namespace std;
 using namespace mju;
 
+
+class Room{
+public:
+    int room_id;
+    string title;
+    vector<string> members;
+};
+
 class Client {
 public:
     Client(){
@@ -32,6 +40,19 @@ public:
         return socket_;
     }
 
+    void SetRoomId(int id) {
+        room_id = id;
+    }
+
+    int GetRoomId() const {
+        return room_id;
+    }
+
+    // 채팅 서버에 있는 대화방에 참여중인 멤버의 이름 반환
+    string GetReceivedDataAsString() const {
+        return string(received_data.begin(), received_data.end());
+    }
+
     vector<char>& GetReceivedData() {
         return received_data;
     }
@@ -39,6 +60,7 @@ public:
 private:
     int socket_;
     vector<char> received_data;
+    int room_id;
 };
 
 class Server {
@@ -57,15 +79,26 @@ public:
 
     void Run() {
         for (int i = 0; i < num_thread_; i++) {
-            threads.emplace_back(thread(&Server::WorkerThread, this));
+            threads.emplace_back(thread([this] { WorkerThread(); }));
         }
 
         while (1) {
             if (stop_flag){
                 break;
             }
-            fd_set read_fds = rfds;
-            int active_socket_count = select(max_fd + 1, &read_fds, nullptr, nullptr, nullptr);
+
+            temp_rfds = rfds;
+
+            //cout << "Checking sockets with FD_ISSET:" << endl;
+            //cout << "max_fd: " << max_fd << endl;
+
+            // for (int i = 0; i <= max_fd; ++i) {
+            //     if (FD_ISSET(i, &temp_rfds)) {
+            //         cout << "Socket " << i << " is set." << endl;
+            //     }
+            // }
+            
+            int active_socket_count = select(max_fd + 1, &temp_rfds, NULL, NULL, NULL);
 
             if (active_socket_count <= 0) {     // 0인 경우는 timeout인 경우
                 cerr << "select() failed: " << strerror(errno) << endl;
@@ -73,15 +106,17 @@ public:
             }
             // 소켓이 읽기 가능한 상태
             // 새로운 클라이언트가 서버에 연결을 시도하면 select 함수가 수동 소켓에 대한 읽기 이벤트를 감지
-            if (FD_ISSET(passive_sock, &read_fds)) {
+            if (FD_ISSET(passive_sock, &temp_rfds)) {
                 AcceptConnection();
             }
 
-            for (int i = 0; i < clients.size(); i++) {
+            for (int i = 0; i < active_socket_count; i++) {
                 Client &client = clients[i];
-                cout << &clients[i] << endl;
-                if (FD_ISSET(client.GetSocket(), &read_fds)) {
-                    cout << "if문 진입 완료" << endl;
+                //cout << "Client.GetSocket(): " << client.GetSocket() << endl;
+                if(client.GetSocket() == passive_sock){
+                    continue;
+                }
+                if (FD_ISSET(client.GetSocket(), &temp_rfds)) {
                     ReceiveData(client);
                 }
             }
@@ -150,6 +185,7 @@ private:
 
         char buffer[MAX_BUFFER_SIZE];
         ssize_t received_bytes = recv(socket, buffer, sizeof(buffer), 0);
+        //cout << "Received bytes: " << received_bytes << endl;
 
         if (received_bytes <= 0) {
             if (received_bytes == 0) {
@@ -165,7 +201,7 @@ private:
                 unique_lock<mutex> lock(m);
                 clients.erase(remove_if(clients.begin(), clients.end(), [socket](const Client &c) { return c.GetSocket() == socket; }), clients.end());
             }
-            exit(1);
+
         } else {
             cout << buffer << endl;
             incoming_data.insert(incoming_data.end(), buffer, buffer + received_bytes);
@@ -178,7 +214,10 @@ private:
         vector<char> &incoming_data = client.GetReceivedData();
 
         string message(incoming_data.begin(), incoming_data.end());
-        cout << "Received from socket " << socket << ": " << message << endl;
+
+        message.erase(remove_if(message.begin(), message.end(), [](char c) { return isspace(static_cast<unsigned char>(c)); }), message.end());
+
+        cout << message << endl;
 
         incoming_data.clear();
     }
@@ -221,9 +260,257 @@ private:
         }
     }
 
+    void ProcessNameCommand(Client &client, const string &message) {
+        CSName cs_name;
+        cs_name.ParseFromString(message);
+
+        string new_name = cs_name.name();
+        string old_name = client.GetReceivedData().empty() ? "test" : string(client.GetReceivedData().begin(), client.GetReceivedData().end());
+
+        client.GetReceivedData().clear();
+        client.GetReceivedData().insert(client.GetReceivedData().end(), new_name.begin(), new_name.end());
+
+        string system_message;
+        if (client.GetReceivedData().empty()) {
+            system_message = "[시스템 메시지] 이름이 변경되었습니다.";
+        } else {
+            system_message = "[시스템 메시지] 이름이 " + old_name + "에서 " + new_name + "으로 변경되었습니다.";
+            BroadcastSystemMessage(client, system_message);
+        }
+
+        SendSystemMessage(client, system_message);
+    }
+
+    void JoinRoom(Client &client, int room_id) {
+        Room &target_room = GetRoomById(room_id);
+        target_room.members.push_back(client.GetReceivedDataAsString());
+
+        client.SetRoomId(room_id);
+
+        string system_message = "[시스템 메시지] " + client.GetReceivedDataAsString() + "님이 입장했습니다.";
+        BroadcastSystemMessage(client, system_message);
+        SendSystemMessage(client, system_message);
+    }
+
+    Room &GetRoomById(int room_id) {
+        auto it = find_if(rooms.begin(), rooms.end(), [room_id](const Room &room) { return room.room_id == room_id; });
+        if (it != rooms.end()) {
+            return *it;
+        } else {
+            cerr << "Error: Room not found with ID " << room_id << endl;
+            exit(1);
+        }
+    }
+
+    bool IsRoomExists(int room_id) {
+        auto it = find_if(rooms.begin(), rooms.end(), [room_id](const Room &room) { return room.room_id == room_id; });
+        return it != rooms.end();
+    }
+
+    Client &GetClientByNickname(const string &nickname) {
+        auto it = find_if(clients.begin(), clients.end(), [&nickname](const Client &client) { return client.GetReceivedDataAsString() == nickname; });
+        if (it != clients.end()) {
+            return *it;
+        } else {
+            cerr << "Error: Client not found with nickname " << nickname << endl;
+            exit(1);
+        }
+    }
+
+    void processRoomsCommand(Client& client) {
+        // Prepare SCRoomsResult message
+        SCRoomsResult roomsResult;
+
+        // Check if there are available rooms
+        if (rooms.empty()) {
+            // No rooms available
+            cout << "No available rooms." << endl;
+        } else {
+            // Add room information to SCRoomsResult message
+            for (const auto& room : rooms) {
+                mju::SCRoomsResult::RoomInfo* roomInfo = roomsResult.add_rooms();
+                roomInfo->set_roomid(room.room_id);
+                roomInfo->set_title(room.title);
+
+                // Add member names
+                for (const auto& member : room.members) {
+                    roomInfo->add_members(member);
+                }
+            }
+        }
+
+        // Serialize the message
+        string serializedMessage;
+        if (roomsResult.SerializeToString(&serializedMessage)) {
+            // Send the message to the client
+            SendProtobufMessage(client, mju::Type::SC_ROOMS_RESULT, serializedMessage);
+        } else {
+            cerr << "Error serializing SCRoomsResult message." << endl;
+        }
+    }
+
+
+    void ProcessCreateCommand(Client &client, const string &message) {
+        // /create 명령어 처리
+        if (client.GetRoomId() != -1) {
+            SendSystemMessage(client, "[시스템 메시지] 대화 방에 있을 때는 방을 개설할 수 없습니다.");
+            return;
+        }
+
+        CSCreateRoom cs_create_room;
+        cs_create_room.ParseFromString(message);
+
+        string room_title = cs_create_room.title();
+        if (room_title.empty()) {
+            SendSystemMessage(client, "[시스템 메시지] 방 제목을 입력하세요.");
+            return;
+        }
+
+        Room new_room;
+        new_room.room_id = next_room_id++;
+        new_room.title = room_title;
+        new_room.members.push_back(client.GetReceivedDataAsString());
+
+        rooms.push_back(new_room);
+        client.SetRoomId(new_room.room_id);
+
+        string system_message = "[시스템 메시지] 방을 개설했습니다.";
+        BroadcastSystemMessage(client, system_message);
+        SendSystemMessage(client, system_message);
+
+        JoinRoom(client, new_room.room_id);
+    }
+
+    void ProcessJoinCommand(Client &client, const string &message) {
+        // /join 명령어 처리
+        if (client.GetRoomId() != -1) {
+            SendSystemMessage(client, "[시스템 메시지] 대화 방에 있을 때는 다른 방에 들어갈 수 없습니다.");
+            return;
+        }
+
+        CSJoinRoom cs_join_room;
+        cs_join_room.ParseFromString(message);
+
+        int target_room_id = cs_join_room.roomid();
+        if (!IsRoomExists(target_room_id)) {
+            SendSystemMessage(client, "[시스템 메시지] 대화 방이 존재하지 않습니다.");
+            return;
+        }
+
+        JoinRoom(client, target_room_id);
+    }
+
+    void ProcessLeaveCommand(Client &client) {
+        // /leave 명령어 처리
+        int room_id = client.GetRoomId();
+        if (room_id == -1) {
+            SendSystemMessage(client, "[시스템 메시지] 현재 대화 방에 들어가 있지 않습니다.");
+            return;
+        }
+
+        Room &current_room = GetRoomById(room_id);
+
+        string system_message = "[시스템 메시지] " + client.GetReceivedDataAsString() + "님이 퇴장했습니다.";
+        BroadcastSystemMessage(client, system_message);
+
+        for (auto it = current_room.members.begin(); it != current_room.members.end(); ++it) {
+            if (*it == client.GetReceivedDataAsString()) {
+                current_room.members.erase(it);
+                break;
+            }
+        }
+
+        SendSystemMessage(client, "[시스템 메시지] 방을 나갔습니다.");
+        client.SetRoomId(-1);
+    }
+
+    void ProcessChatCommand(Client &client, const string &message) {
+        // /chat 명령어 처리
+        int room_id = client.GetRoomId();
+        if (room_id == -1) {
+            SendSystemMessage(client, "[시스템 메시지] 현재 대화 방에 들어가 있지 않습니다.");
+            return;
+        }
+
+        SCChat sc_chat;
+        sc_chat.ParseFromString(message);
+
+        string chat_message = "[" + client.GetReceivedDataAsString() + "] " + sc_chat.text();
+        BroadcastChatMessage(client, chat_message);
+    }
+
+    void ProcessShutdownCommand() {
+        // /shutdown 명령어 처리
+        stop_flag = true;
+        cv.notify_all();
+    }
+
+    void SendData(Client &client) {
+        int socket = client.GetSocket();
+        vector<char> &outgoing_data = client.GetReceivedData();
+
+        ssize_t sent_bytes = send(socket, outgoing_data.data(), outgoing_data.size(), 0);
+
+        if (sent_bytes <= 0) {
+            cerr << "send() failed: " << strerror(errno) << endl;
+        } else {
+            // Sent successfully, remove sent data from the buffer
+            outgoing_data.erase(outgoing_data.begin(), outgoing_data.begin() + sent_bytes);
+        }
+    }
+
+    void SendProtobufMessage(Client &client, Type::MessageType message_type, const string &message) {
+        Type type_message;
+        type_message.set_type(message_type);
+
+        string serialized_type;
+        type_message.SerializeToString(&serialized_type);
+
+        client.GetReceivedData().insert(client.GetReceivedData().end(), serialized_type.begin(), serialized_type.end());
+        client.GetReceivedData().insert(client.GetReceivedData().end(), message.begin(), message.end());
+
+        // 클라이언트에게 전송
+        SendData(client);
+    }
+
+    void SendSystemMessage(Client &client, const string &message) {
+        SCSystemMessage sc_system_message;
+        sc_system_message.set_text(message);
+
+        string serialized_message;
+        sc_system_message.SerializeToString(&serialized_message);
+
+        SendProtobufMessage(client, Type::SC_SYSTEM_MESSAGE, serialized_message);
+    }
+
+    void BroadcastSystemMessage(Client &sender, const string &message) {
+        SCSystemMessage sc_system_message;
+        sc_system_message.set_text(message);
+
+        string serialized_message;
+        sc_system_message.SerializeToString(&serialized_message);
+
+        for (const auto &member : GetRoomById(sender.GetRoomId()).members) {
+            if (member != sender.GetReceivedDataAsString()) {
+                Client &receiver = GetClientByNickname(member);
+                SendProtobufMessage(receiver, Type::SC_SYSTEM_MESSAGE, serialized_message);
+            }
+        }
+    }
+
+    void BroadcastChatMessage(Client &sender, const string &message) {
+        for (const auto &member : GetRoomById(sender.GetRoomId()).members) {
+            if (member != sender.GetReceivedDataAsString()) {
+                Client &receiver = GetClientByNickname(member);
+                SendProtobufMessage(receiver, Type::SC_CHAT, message);
+            }
+        }
+    }
+
+
 private:
     int passive_sock;
-    fd_set rfds;
+    fd_set rfds, temp_rfds;
     int max_fd;
     vector<Client> clients;
 
@@ -234,6 +521,9 @@ private:
     condition_variable cv;
 
     bool stop_flag;
+
+    vector<Room> rooms;
+    int next_room_id = 1;   // room_id는 0부터 시작
 };
 
 int main(int argc, char *argv[]) {
