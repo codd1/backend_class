@@ -132,7 +132,7 @@ public:
                     continue;
                 }
                 if (FD_ISSET(client.GetSocket(), &temp_rfds)) {
-                    ReceiveData(client);
+                    ReceiveType(client);
                 }
             }
         }
@@ -201,7 +201,7 @@ private:
         cv.notify_one();
     }
 
-    void ReceiveData(Client &client) {
+    void ReceiveType(Client &client) {
         int socket = client.GetSocket();
         vector<char> &incoming_data = client.GetReceivedData();
 
