@@ -10,10 +10,11 @@
 #include <mutex>
 #include <condition_variable>
 #include <queue>
+#include <arpa/inet.h>          // inet_ntop()
 
 #include "message.pb.h"
 
-#define MAX_BUFFER_SIZE 65536
+#define MAX_BUFFER_SIZE 100
 
 using namespace std;
 using namespace mju;
@@ -79,6 +80,8 @@ public:
 
     void Run() {
         for (int i = 0; i < num_thread_; i++) {
+            // 스레드 생성
+            cout << "메시지 작업 쓰레드 #" << i << " 생성" << endl;
             threads.emplace_back(thread([this] { WorkerThread(); }));
         }
 
@@ -145,6 +148,8 @@ private:
             exit(1);
         }
 
+        cout << "Port 번호 " << port << "에서 서버 동작 중" << endl;
+
         if (listen(passive_sock, 10) < 0) {
             cerr << "listen() failed: " << strerror(errno) << endl;
             exit(1);
@@ -165,6 +170,10 @@ private:
             exit(1);
         }
 
+        // 클라이언트의 IP 주소와 port 주소 얻기 (데모 서버처럼 출력하기 위함)
+        inet_ntop(AF_INET, &(client_sin.sin_addr), client_ip, INET_ADDRSTRLEN);
+        client_port = ntohs(client_sin.sin_port);
+
         SetNonBlocking(client_sock);
         FD_SET(client_sock, &rfds);
         max_fd = max(max_fd, client_sock);
@@ -174,7 +183,8 @@ private:
             clients.emplace_back(client_sock);
         }
 
-        cout << "Socket " << client_sock << " 연결 완료" << endl;
+        cout << "새로운 클라이언트 접속 [('" << client_ip << "', " << client_port << ")]" << endl;
+        //cout << "Socket " << client_sock << " 연결 완료" << endl;
 
         cv.notify_one();
     }
@@ -183,33 +193,116 @@ private:
         int socket = client.GetSocket();
         vector<char> &incoming_data = client.GetReceivedData();
 
-        char buffer[MAX_BUFFER_SIZE];
-        ssize_t received_bytes = recv(socket, buffer, sizeof(buffer), 0);
-        //cout << "Received bytes: " << received_bytes << endl;
+        // 헤더 크기만큼 데이터를 수신
+        //cout << "***" << incoming_data.size() << endl;
+        //cout << sizeof(uint16_t) << endl;
+        if (incoming_data.size() <= sizeof(uint16_t)) {
+            char header_buffer[sizeof(uint16_t)];
+            ssize_t received_header_bytes = recv(socket, header_buffer, sizeof(header_buffer), 0);
 
-        if (received_bytes <= 0) {
-            if (received_bytes == 0) {
-                cout << "Socket " << socket << " 연결 종료" << endl;
-            } else {
-                cerr << "recv() failed: " << strerror(errno) << endl;
+            if (received_header_bytes < 0) {
+                if (received_header_bytes == 0) {
+                    cout << "클라이언트 [('" << client_ip << "', " << client_port << "):" << " ]: 상대방이 소켓을 닫았음" << endl;
+                } else {
+                    cerr << "recv() header failed: " << strerror(errno) << endl;
+                }
+
+                // 클라이언트 벡터에서 해당 클라이언트 정리 (제거)
+                close(socket);
+                FD_CLR(socket, &rfds);
+                {
+                    unique_lock<mutex> lock(m);
+                    clients.erase(remove_if(clients.begin(), clients.end(), [socket](const Client &c) { return c.GetSocket() == socket; }), clients.end());
+                }
+                return;
             }
 
-            // 클라이언트 벡터에서 해당 클라이언트 정리 (제거)
-            close(socket);
-            FD_CLR(socket, &rfds);
-            {
-                unique_lock<mutex> lock(m);
-                clients.erase(remove_if(clients.begin(), clients.end(), [socket](const Client &c) { return c.GetSocket() == socket; }), clients.end());
-            }
+            uint16_t message_length;
+            memcpy(&message_length, header_buffer, sizeof(uint16_t));
+            message_length = ntohs(message_length);
 
-        } else {
-            cout << buffer << endl;
+            incoming_data.insert(incoming_data.end(), header_buffer, header_buffer + sizeof(uint16_t));
+
+            // header + 수신되어야 할 전체 메시지 길이
+            // 아직 메시지의 나머지 부분이 수신되지 않았음
+            if (incoming_data.size() < sizeof(header_buffer) + message_length) {
+                return;
+            }
+        }
+
+        // 실제 메시지 데이터 수신
+        uint16_t message_length;
+        memcpy(&message_length, incoming_data.data(), sizeof(uint16_t));
+        message_length = ntohs(message_length);
+
+        while (incoming_data.size() < sizeof(uint16_t) + message_length) {
+            char buffer[MAX_BUFFER_SIZE];
+            ssize_t received_bytes = recv(socket, buffer, min(sizeof(buffer), static_cast<size_t>(message_length)), 0);
+
+            if (received_bytes <= 0) {
+                if (received_bytes == 0) {
+                    cout << "클라이언트 [('" << client_ip << "', " << client_port << "):" << " ]: 상대방이 소켓을 닫았음" << endl;
+                } else {
+                    cerr << "recv() message data failed: " << strerror(errno) << endl;
+                }
+
+                // 클라이언트 벡터에서 해당 클라이언트 정리 (제거)
+                close(socket);
+                FD_CLR(socket, &rfds);
+                {
+                    unique_lock<mutex> lock(m);
+                    clients.erase(remove_if(clients.begin(), clients.end(), [socket](const Client &c) { return c.GetSocket() == socket; }), clients.end());
+                }
+                return;
+            }
+            cout << "Received bytes: " << received_bytes << endl;
             incoming_data.insert(incoming_data.end(), buffer, buffer + received_bytes);
-            ProcessReceicedData(client);
+        }
+
+        // 메시지를 파싱할 수 있는지 확인
+        Type message;
+        if (message.ParseFromArray(incoming_data.data() + sizeof(uint16_t), message_length)) {
+            cout << "파싱 성공" << endl;
+            ProcessReceivedData(client, message);
+            incoming_data.clear();  // 파싱한 메시지는 처리되었으므로 버퍼 비우기
+        } else {
+            cout << "파싱 실패!!!" << endl;
         }
     }
 
-    void ProcessReceicedData(Client &client) {
+
+
+
+    void ProcessReceivedData(Client &client, const Type &message_type) {
+        // 클라이언트로부터 수신한 데이터 처리
+        //string received_data = client.GetReceivedDataAsString();
+
+        switch (message_type.CS_NAME) {      // switch (message_type.type()) {
+            //cout << message_type.type() << endl;
+            case Type::CS_NAME:
+                cout << "name 진입" << endl;
+                ProcessNameCommand(client, message_type);
+                break;
+            case Type::CS_CREATE_ROOM:
+                //ProcessCreateCommand(client, received_data);
+                break;
+            case Type::CS_JOIN_ROOM:
+                //ProcessJoinCommand(client, received_data);
+                break;
+            // case Type::CS_LEAVE:
+            //     ProcessLeaveCommand(client);
+            //     break;
+            case Type::CS_CHAT:
+                //ProcessChatCommand(client, received_data);
+                break;
+            case Type::CS_SHUTDOWN:
+                ProcessShutdownCommand();
+                break;
+            default:
+                cerr << "Unknown message type." << endl;
+                break;
+        }
+
         int socket = client.GetSocket();
         vector<char> &incoming_data = client.GetReceivedData();
 
@@ -235,6 +328,7 @@ private:
         }
     }
 
+    // 스레드가 실행할 함수
     void WorkerThread() {
         while (true) {
             Client c;
@@ -256,16 +350,17 @@ private:
                 }
             }
 
-            ProcessReceicedData(c);
+            //ProcessReceivedData(c);       //?
         }
     }
 
-    void ProcessNameCommand(Client &client, const string &message) {
+    void ProcessNameCommand(Client &client, const Type &message) {
         CSName cs_name;
-        cs_name.ParseFromString(message);
+        //cs_name.ParseFromString(message);
 
         string new_name = cs_name.name();
-        string old_name = client.GetReceivedData().empty() ? "test" : string(client.GetReceivedData().begin(), client.GetReceivedData().end());
+        cout << "현재 설정된 네임은: " << cs_name.name() << endl;
+        string old_name = client.GetReceivedData().empty() ? "이름 없음" : string(client.GetReceivedData().begin(), client.GetReceivedData().end());
 
         client.GetReceivedData().clear();
         client.GetReceivedData().insert(client.GetReceivedData().end(), new_name.begin(), new_name.end());
@@ -454,7 +549,7 @@ private:
         if (sent_bytes <= 0) {
             cerr << "send() failed: " << strerror(errno) << endl;
         } else {
-            // Sent successfully, remove sent data from the buffer
+            // 성공적으로 보냈다면, 보낸 데이터 삭제
             outgoing_data.erase(outgoing_data.begin(), outgoing_data.begin() + sent_bytes);
         }
     }
@@ -512,7 +607,10 @@ private:
     int passive_sock;
     fd_set rfds, temp_rfds;
     int max_fd;
+
     vector<Client> clients;
+    char client_ip[20];
+    int client_port;
 
     int num_thread_;
     vector<thread> threads;
@@ -527,6 +625,7 @@ private:
 };
 
 int main(int argc, char *argv[]) {
+    // g++ -o server server.cpp message.pb.cc -lprotobuf
     // ./server 9176 3
     if (argc != 3) {
         return 1;
