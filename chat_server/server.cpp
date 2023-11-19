@@ -20,6 +20,7 @@ using namespace std;
 using namespace mju;
 
 
+mutex client_name_mutex;
 string client_name;
 
 class Client {
@@ -53,6 +54,7 @@ public:
         type_flag = true;
         command_flag = true;
         BindConnection(port);
+        threads.resize(num_thread_);
     }
 
     ~Server() {
@@ -65,7 +67,7 @@ public:
         for (int i = 0; i < num_thread_; i++) {
             // 스레드 생성
             cout << "메시지 작업 쓰레드 #" << i << " 생성" << endl;
-            threads.emplace_back(thread([this] { WorkerThread(); }));
+            threads.emplace_back(thread([this, t] { WorkerThread(t); }));
         }
 
         while (1) {
@@ -89,7 +91,7 @@ public:
 
             for (int i = 0; i < active_socket_count; i++) {
                 Client &client = clients[i];
-                cout << "Client.GetSocket(): " << client.GetSocket() << endl;
+                //cout << "Client.GetSocket(): " << client.GetSocket() << endl;
                 //cout << i << endl;
                 if(client.GetSocket() == passive_sock){
                     continue;
@@ -98,7 +100,7 @@ public:
                     ReceiveData(client, &type_);
                     ReceiveData(client, t);
                 }
-                cout << "-------------------" << endl;
+                //cout << "-------------------" << endl;
             }
             if(command_flag){
                 command_flag = false;
@@ -179,7 +181,7 @@ private:
             ssize_t received_header_bytes = recv(socket, header_buffer, sizeof(header_buffer), 0);
 
             if(RecvErrorHandling(socket, received_header_bytes)){
-                //incoming_data.clear();
+                incoming_data.clear();
                 return;
             }
 
@@ -195,7 +197,7 @@ private:
             ssize_t received_bytes = recv(socket, buffer, min(sizeof(buffer), static_cast<size_t>(message_length)), 0);
 
             if(RecvErrorHandling(socket, received_bytes)){
-                //incoming_data.clear();
+                incoming_data.clear();
                 return;
             }
 
@@ -210,7 +212,7 @@ private:
                 type_flag = false;
                 return;
             } else {
-                ProcessReceivedData(client, message, t);
+                ProcessReceivedData(client, message);
                 incoming_data.clear();
                 type_flag = true;
             }
@@ -241,16 +243,15 @@ private:
         }
     }
 
-    void ProcessReceivedData(Client &client, const Type &type, const Type* t) {
+    void ProcessReceivedData(Client &client, const Type &type) {
         // 클라이언트로부터 수신한 데이터 처리
         //cout << message_type.GetTypeName() << endl;
         Type::MessageType messageType = type.type();
-        cout << "Message Type: " << MessageTypeToString(messageType) << std::endl;
+        //cout << "Message Type: " << MessageTypeToString(messageType) << std::endl;
 
         switch (messageType) {
             case Type::CS_NAME:
                 if(command_flag){
-                    cout << "name 진입" << endl;
                     ProcessNameCommand(client, type);
                 }
                 break;
@@ -282,7 +283,7 @@ private:
     }
 
     // 스레드가 실행할 함수
-    void WorkerThread() {
+    void WorkerThread(Type *t) {
         while (true) {
             Client c;
 
@@ -307,6 +308,8 @@ private:
             if (c.GetSocket() < 0) {
                 continue;
             }
+
+            // 구현:
         }
     }
 
@@ -322,7 +325,12 @@ private:
         };
 
         received_data.erase(remove_if(received_data.begin(), received_data.end(), line_end_check), received_data.end());
-        client_name = received_data;
+
+        // client_name에 대한 접근 동기화
+        {
+            lock_guard<mutex> lock(client_name_mutex);
+            client_name = received_data;
+        }
 
         system_message = "이름이 " + client_name + " 으로 변경되었습니다.";
         cout << "[시스템 메시지] " << system_message << endl;
@@ -368,6 +376,44 @@ private:
 
         // 직렬화된 시스템 메시지 전송
         send(client.GetSocket(), serialized_message.c_str(), serialized_message.size(), 0);
+    }
+
+    void ReceiveAndBroadcastChatMessages(Client &client) {
+        vector<char> &incoming_data = client.GetReceivedData();
+
+        // 채팅 메시지 처리
+        if (incoming_data.size() > sizeof(uint16_t)) {
+            Type type;
+            if (type.ParseFromArray(incoming_data.data() , incoming_data.size())) {
+                ProcessReceivedData(client, type);
+
+                // 모든 클라이언트에게 채팅 메시지 전파
+                BroadcastChatMessage(client, incoming_data.data());
+
+                // 수신한 데이터 초기화
+                incoming_data.clear();
+            } else {
+                cerr << "메시지 파싱 실패!!!" << endl;
+                exit(1);
+            }
+        }
+    }
+
+    void BroadcastChatMessage(Client &sender, const string &system_message) {
+
+        SCSystemMessage system_message_data;
+        system_message_data.set_text(system_message);
+
+        // SC_CHAT 타입 생성
+        Type chat_type;
+        chat_type.set_type(Type::SC_CHAT);
+
+        // 모든 클라이언트에게 메시지 전송
+        for (auto &recipient : clients) {
+            if (recipient.GetSocket() != sender.GetSocket()) {
+                SendMessage(recipient, chat_type, system_message_data);
+            }
+        }
     }
 
     // MessageType에 대응하는 문자열을 반환하는 함수
