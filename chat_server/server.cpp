@@ -89,7 +89,7 @@ public:
 
             for (int i = 0; i < active_socket_count; i++) {
                 Client &client = clients[i];
-                //cout << "Client.GetSocket(): " << client.GetSocket() << endl;
+                cout << "Client.GetSocket(): " << client.GetSocket() << endl;
                 //cout << i << endl;
                 if(client.GetSocket() == passive_sock){
                     continue;
@@ -98,7 +98,7 @@ public:
                     ReceiveData(client, &type_);
                     ReceiveData(client, t);
                 }
-                //cout << "-------------------" << endl;
+                cout << "-------------------" << endl;
             }
             if(command_flag){
                 command_flag = false;
@@ -166,7 +166,6 @@ private:
         }
 
         cout << "새로운 클라이언트 접속 [('" << client_ip << "', " << client_port << ")]" << endl;
-        //cout << "Socket " << client_sock << " 연결 완료" << endl;
 
         cv.notify_one();
     }
@@ -179,7 +178,10 @@ private:
             char header_buffer[sizeof(uint16_t)];
             ssize_t received_header_bytes = recv(socket, header_buffer, sizeof(header_buffer), 0);
 
-            RecvErrorHandling(socket, received_header_bytes);
+            if(RecvErrorHandling(socket, received_header_bytes)){
+                //incoming_data.clear();
+                return;
+            }
 
             incoming_data.insert(incoming_data.end(), header_buffer, header_buffer + sizeof(uint16_t));
         }
@@ -192,7 +194,10 @@ private:
             char buffer[MAX_BUFFER_SIZE];
             ssize_t received_bytes = recv(socket, buffer, min(sizeof(buffer), static_cast<size_t>(message_length)), 0);
 
-            RecvErrorHandling(socket, received_bytes);
+            if(RecvErrorHandling(socket, received_bytes)){
+                //incoming_data.clear();
+                return;
+            }
 
             //cout << "Received bytes: " << received_bytes << endl;
             incoming_data.insert(incoming_data.end(), buffer, buffer + received_bytes);
@@ -200,8 +205,6 @@ private:
 
         Type message;
         if (message.ParseFromArray(incoming_data.data() , message_length) + sizeof(uint16_t)) {
-            //cout << "파싱 성공" << endl;
-            //cout << "type_flag: " << type_flag << endl;
             if(type_flag){
                 t->set_type(Type::CS_NAME);
                 type_flag = false;
@@ -218,7 +221,7 @@ private:
         
     }
 
-    void RecvErrorHandling(int socket, ssize_t recv_bytes){
+    bool RecvErrorHandling(int socket, ssize_t recv_bytes){
         if (recv_bytes <= 0) {
             if (recv_bytes == 0) {
                 cout << "클라이언트 [('" << client_ip << "', " << client_port << "):" << " ]: 상대방이 소켓을 닫았음" << endl;
@@ -232,7 +235,9 @@ private:
                 unique_lock<mutex> lock(m);
                 clients.erase(remove_if(clients.begin(), clients.end(), [socket](const Client &c) { return c.GetSocket() == socket; }), clients.end());
             }
-            exit(1);
+            return true;
+        } else{
+            return false;
         }
     }
 
@@ -296,6 +301,11 @@ private:
                     c = move(clients.front());
                     clients.erase(clients.begin());
                 }
+            }
+
+            // 클라이언트 소켓이 이미 닫힌 경우에는 처리를 건너뜀
+            if (c.GetSocket() < 0) {
+                continue;
             }
         }
     }
@@ -416,5 +426,6 @@ int main(int argc, char *argv[]) {
     Type *t = new Type;
     server.Run(t);
 
+    delete(t);
     return 0;
 }
