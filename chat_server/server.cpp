@@ -22,13 +22,6 @@ using namespace mju;
 
 string client_name;
 
-class Room{
-public:
-    int room_id;
-    string title;
-    vector<string> members;
-};
-
 class Client {
 public:
     Client(){
@@ -43,31 +36,6 @@ public:
         return socket_;
     }
 
-    Type& GetType(){
-        return type_;
-    }
-
-    void SetName(string name){
-        name_ = name;
-    }
-    
-    string& GetName(){
-        return name_;
-    }
-
-    void SetRoomId(int id) {
-        room_id = id;
-    }
-
-    int GetRoomId() const {
-        return room_id;
-    }
-
-    // 채팅 서버에 있는 대화방에 참여중인 멤버의 이름 반환
-    string GetReceivedDataAsString() const {
-        return string(received_data.begin(), received_data.end());
-    }
-
     vector<char>& GetReceivedData() {
         return received_data;
     }
@@ -75,10 +43,6 @@ public:
 private:
     int socket_;
     vector<char> received_data;
-    string name_;
-    int room_id;
-    Type type_;
-    Type_MessageType m_type_;
 };
 
 class Server {
@@ -97,7 +61,7 @@ public:
         }
     }
 
-    void Run() {
+    void Run(Type* t) {
         for (int i = 0; i < num_thread_; i++) {
             // 스레드 생성
             cout << "메시지 작업 쓰레드 #" << i << " 생성" << endl;
@@ -131,8 +95,8 @@ public:
                     continue;
                 }
                 if (FD_ISSET(client.GetSocket(), &temp_rfds)) {
-                    ReceiveData(client);
-                    ReceiveData(client);
+                    ReceiveData(client, &type_);
+                    ReceiveData(client, t);
                 }
                 //cout << "-------------------" << endl;
             }
@@ -207,10 +171,7 @@ private:
         cv.notify_one();
     }
 
-    void ReceiveData(Client &client) {
-        Type typeMessage = client.GetType();
-        //cout << "현재 타입: " << typeMessage.GetTypeName() << endl;
-
+    void ReceiveData(Client &client, Type* t) {
         int socket = client.GetSocket();
         vector<char> &incoming_data = client.GetReceivedData();
 
@@ -233,21 +194,20 @@ private:
 
             RecvErrorHandling(socket, received_bytes);
 
-            cout << "Received bytes: " << received_bytes << endl;
+            //cout << "Received bytes: " << received_bytes << endl;
             incoming_data.insert(incoming_data.end(), buffer, buffer + received_bytes);
         }
-
-        
 
         Type message;
         if (message.ParseFromArray(incoming_data.data() , message_length) + sizeof(uint16_t)) {
             //cout << "파싱 성공" << endl;
             //cout << "type_flag: " << type_flag << endl;
             if(type_flag){
+                t->set_type(Type::CS_NAME);
                 type_flag = false;
                 return;
             } else {
-                ProcessReceivedData(client, message);
+                ProcessReceivedData(client, message, t);
                 incoming_data.clear();
                 type_flag = true;
             }
@@ -276,35 +236,30 @@ private:
         }
     }
 
-    void ProcessReceivedData(Client &client, const Type &message_type) {
+    void ProcessReceivedData(Client &client, const Type &type, const Type* t) {
         // 클라이언트로부터 수신한 데이터 처리
-        //string received_data = client.GetReceivedDataAsString();
+        //cout << message_type.GetTypeName() << endl;
+        Type::MessageType messageType = type.type();
+        cout << "Message Type: " << MessageTypeToString(messageType) << std::endl;
 
-        switch (message_type.type()) {
-            //cout << message_type.type() << endl;
+        switch (messageType) {
             case Type::CS_NAME:
                 if(command_flag){
                     cout << "name 진입" << endl;
-                    ProcessNameCommand(client, message_type);
+                    ProcessNameCommand(client, type);
                 }
                 break;
             case Type::CS_CHAT:
                 //ProcessChatCommand(client, received_data);
                 break;
             default:
-                cerr << "Unknown message type." << message_type.type() << endl;
+                cerr << "Unknown message type." << messageType << endl;
                 break;
         }
 
-        int socket = client.GetSocket();
         vector<char> &incoming_data = client.GetReceivedData();
-
         string message(incoming_data.begin(), incoming_data.end());
-
         message.erase(remove_if(message.begin(), message.end(), [](char c) { return isspace(static_cast<unsigned char>(c)); }), message.end());
-
-        //cout << message << endl;
-
         incoming_data.clear();
     }
 
@@ -342,8 +297,6 @@ private:
                     clients.erase(clients.begin());
                 }
             }
-
-            //ProcessReceivedData(c);       //?
         }
     }
 
@@ -351,7 +304,6 @@ private:
         vector<char> &incoming_data = client.GetReceivedData();
 
         string received_data(incoming_data.begin(), incoming_data.end());
-        //cout << received_data << endl;
 
         string system_message;
         
@@ -362,90 +314,74 @@ private:
         received_data.erase(remove_if(received_data.begin(), received_data.end(), line_end_check), received_data.end());
         client_name = received_data;
 
-        system_message = "[시스템 메시지] 이름이 " + client_name + " 으로 변경되었습니다.";
-        cout << system_message << endl;
+        system_message = "이름이 " + client_name + " 으로 변경되었습니다.";
+        cout << "[시스템 메시지] " << system_message << endl;
 
-        //SendSystemMessage(client, system_message);
+        Type::MessageType messageType = message.type();
+        //cout << "Message Type: " << MessageTypeToString(messageType) << std::endl;
+
+        SendSystemMessage(client, system_message);
+
+        //incoming_data.clear();
     }
 
-    void processRoomsCommand(Client& client) {
-        // Prepare SCRoomsResult message
-        SCRoomsResult roomsResult;
+    void SendSystemMessage(Client &client, const string &system_message) {
+        // SCSystemMessage 객체 생성
+        SCSystemMessage system_message_data;
+        system_message_data.set_text(system_message);
 
-        // Check if there are available rooms
-        if (rooms.empty()) {
-            // No rooms available
-            cout << "No available rooms." << endl;
-        } else {
-            // Add room information to SCRoomsResult message
-            for (const auto& room : rooms) {
-                mju::SCRoomsResult::RoomInfo* roomInfo = roomsResult.add_rooms();
-                roomInfo->set_roomid(room.room_id);
-                roomInfo->set_title(room.title);
-
-                // Add member names
-                for (const auto& member : room.members) {
-                    roomInfo->add_members(member);
-                }
-            }
-        }
-
-        // Serialize the message
-        string serializedMessage;
-        if (roomsResult.SerializeToString(&serializedMessage)) {
-            // Send the message to the client
-            SendProtobufMessage(client, mju::Type::SC_ROOMS_RESULT, serializedMessage);
-        } else {
-            cerr << "Error serializing SCRoomsResult message." << endl;
-        }
-    }
-
-    void SendData(Client &client) {
-        int socket = client.GetSocket();
-        vector<char> &outgoing_data = client.GetReceivedData();
-
-        ssize_t sent_bytes = send(socket, outgoing_data.data(), outgoing_data.size(), 0);
-
-        if (sent_bytes <= 0) {
-            cerr << "send() failed: " << strerror(errno) << endl;
-        } else {
-            // 성공적으로 보냈다면, 보낸 데이터 삭제
-            outgoing_data.erase(outgoing_data.begin(), outgoing_data.begin() + sent_bytes);
-        }
-    }
-
-    void SendProtobufMessage(Client &client, Type::MessageType message_type, const string &message) {
         Type type_message;
-        type_message.set_type(message_type);
-        //type_message.set_data(message);
+        type_message.set_type(Type::SC_SYSTEM_MESSAGE);
 
-        string serialized_type;
-        type_message.SerializeToString(&serialized_type);
-
-        uint16_t message_length = htons(serialized_type.length());
-        string serialized_message(reinterpret_cast<char*>(&message_length), sizeof(uint16_t));
-        serialized_message += serialized_type;
-
-        client.GetReceivedData().insert(client.GetReceivedData().end(), serialized_message.begin(), serialized_message.end());
-
-        SendData(client);
+        SendMessage(client, type_message, system_message_data);
     }
 
-    void SendSystemMessage(Client &client, const string &message) {
-        SCSystemMessage sc_system_message;
-        sc_system_message.set_text(message);
-
+    // S->C
+    void SendMessage(Client &client, const Type& type_message, const SCSystemMessage &system_message) {
+        // 메시지를 직렬화
         string serialized_message;
-        sc_system_message.SerializeToString(&serialized_message);
+        string serialized_type;
 
-        SendProtobufMessage(client, Type::SC_SYSTEM_MESSAGE, serialized_message);
+        // type,system 메시지를 직렬화
+        type_message.SerializeToString(&serialized_type);
+        system_message.SerializeToString(&serialized_message);
+
+        // 메시지 길이 전송
+        uint16_t message_length = htons(static_cast<uint16_t>(serialized_type.size()));
+        send(client.GetSocket(), &message_length, sizeof(uint16_t), 0);
+
+        // 직렬화된 타입 전송
+        send(client.GetSocket(), serialized_type.c_str(), serialized_type.size(), 0);
+
+        message_length = htons(static_cast<uint16_t>(serialized_message.size()));
+        send(client.GetSocket(), &message_length, sizeof(uint16_t), 0);
+
+        // 직렬화된 시스템 메시지 전송
+        send(client.GetSocket(), serialized_message.c_str(), serialized_message.size(), 0);
     }
 
+    // MessageType에 대응하는 문자열을 반환하는 함수
+    const char* MessageTypeToString(Type::MessageType messageType) {
+        switch (messageType) {
+            case Type::CS_NAME: return "CS_NAME";
+            case Type::CS_ROOMS: return "CS_ROOMS";
+            case Type::CS_CREATE_ROOM: return "CS_CREATE_ROOM";
+            case Type::CS_JOIN_ROOM: return "CS_JOIN_ROOM";
+            case Type::CS_LEAVE_ROOM: return "CS_LEAVE_ROOM";
+            case Type::CS_CHAT: return "CS_CHAT";
+            case Type::CS_SHUTDOWN: return "CS_SHUTDOWN";
+            case Type::SC_ROOMS_RESULT: return "SC_ROOMS_RESULT";
+            case Type::SC_CHAT: return "SC_CHAT";
+            case Type::SC_SYSTEM_MESSAGE: return "SC_SYSTEM_MESSAGE";
+            default: return "Unknown";
+        }
+    }
 
 private:
     int passive_sock;
     fd_set rfds, temp_rfds;
     int max_fd;
+    Type type_;
 
     vector<Client> clients;
     char client_ip[20];
@@ -461,8 +397,9 @@ private:
     bool type_flag;     // 타입 정보를 포함하는 메시지인지 (먼저 오는 메시지)
     bool command_flag;  // 명령어 정보를 포함하는 메시지인지 (두 번째로 오는 메시지)
 
-    vector<Room> rooms;
     int next_room_id = 1;   // room_id는 0부터 시작
+
+    SCSystemMessage system_message_;
 };
 
 int main(int argc, char *argv[]) {
@@ -476,7 +413,8 @@ int main(int argc, char *argv[]) {
     int num_thread = stoi(argv[2]);
 
     Server server(port, num_thread);
-    server.Run();
+    Type *t = new Type;
+    server.Run(t);
 
     return 0;
 }
