@@ -309,7 +309,7 @@ private:
                 continue;
             }
 
-            // 구현:
+            ReceiveAndBroadcastChatMessages(c);
         }
     }
 
