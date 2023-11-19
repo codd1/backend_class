@@ -20,6 +20,8 @@ using namespace std;
 using namespace mju;
 
 
+string client_name;
+
 class Room{
 public:
     int room_id;
@@ -45,6 +47,14 @@ public:
         return type_;
     }
 
+    void SetName(string name){
+        name_ = name;
+    }
+    
+    string& GetName(){
+        return name_;
+    }
+
     void SetRoomId(int id) {
         room_id = id;
     }
@@ -65,6 +75,7 @@ public:
 private:
     int socket_;
     vector<char> received_data;
+    string name_;
     int room_id;
     Type type_;
     Type_MessageType m_type_;
@@ -75,8 +86,8 @@ public:
     Server(int port, int num_thread){
         num_thread_ = num_thread;
         stop_flag = false; 
-        header_flag = true;
         type_flag = true;
+        command_flag = true;
         BindConnection(port);
     }
 
@@ -113,9 +124,9 @@ public:
             }
 
             for (int i = 0; i < active_socket_count; i++) {
-                cout << i << endl;
                 Client &client = clients[i];
                 //cout << "Client.GetSocket(): " << client.GetSocket() << endl;
+                //cout << i << endl;
                 if(client.GetSocket() == passive_sock){
                     continue;
                 }
@@ -123,6 +134,12 @@ public:
                     ReceiveData(client);
                     ReceiveData(client);
                 }
+                //cout << "-------------------" << endl;
+            }
+            if(command_flag){
+                command_flag = false;
+            } else{
+                command_flag = true;
             }
         }
     }
@@ -192,44 +209,8 @@ private:
 
     void ReceiveData(Client &client) {
         Type typeMessage = client.GetType();
+        //cout << "현재 타입: " << typeMessage.GetTypeName() << endl;
 
-        if (type_flag){
-            cout << "Type 먼저 들어옴 1111" << endl;
-            ReceiveTypeData(client);
-
-            typeMessage.set_type(mju::Type::CS_NAME);
-
-            cout << typeMessage.GetTypeName() << endl;
-
-            type_flag = false;
-        } else{
-            cout << "실제 데이터 들어옴 2222" << endl;
-            cout << typeMessage.GetTypeName() << endl;
-            ReceiveTypeData(client);
-
-            type_flag = true;
-        }
-    }
-
-    void RecvErrorHandling(int socket, ssize_t recv_bytes){
-        if (recv_bytes <= 0) {
-            if (recv_bytes == 0) {
-                cout << "클라이언트 [('" << client_ip << "', " << client_port << "):" << " ]: 상대방이 소켓을 닫았음" << endl;
-            } else {
-                cerr << "recv() header failed: " << strerror(errno) << endl;
-            }
-
-            close(socket);
-            FD_CLR(socket, &rfds);
-            {
-                unique_lock<mutex> lock(m);
-                clients.erase(remove_if(clients.begin(), clients.end(), [socket](const Client &c) { return c.GetSocket() == socket; }), clients.end());
-            }
-            exit(1);
-        }
-    }
-
-    void ReceiveTypeData(Client &client){
         int socket = client.GetSocket();
         vector<char> &incoming_data = client.GetReceivedData();
 
@@ -260,14 +241,39 @@ private:
 
         Type message;
         if (message.ParseFromArray(incoming_data.data() , message_length) + sizeof(uint16_t)) {
-            cout << "파싱 성공" << endl;
-            ProcessReceivedData(client, message);
-            incoming_data.clear();
+            //cout << "파싱 성공" << endl;
+            //cout << "type_flag: " << type_flag << endl;
+            if(type_flag){
+                type_flag = false;
+                return;
+            } else {
+                ProcessReceivedData(client, message);
+                incoming_data.clear();
+                type_flag = true;
+            }
         } else {
-            cout << "파싱 실패!!!" << endl;
+            //cout << "파싱 실패!!!" << endl;
             exit(1);
         }
         
+    }
+
+    void RecvErrorHandling(int socket, ssize_t recv_bytes){
+        if (recv_bytes <= 0) {
+            if (recv_bytes == 0) {
+                cout << "클라이언트 [('" << client_ip << "', " << client_port << "):" << " ]: 상대방이 소켓을 닫았음" << endl;
+            } else {
+                cerr << "recv() header failed: " << strerror(errno) << endl;
+            }
+
+            close(socket);
+            FD_CLR(socket, &rfds);
+            {
+                unique_lock<mutex> lock(m);
+                clients.erase(remove_if(clients.begin(), clients.end(), [socket](const Client &c) { return c.GetSocket() == socket; }), clients.end());
+            }
+            exit(1);
+        }
     }
 
     void ProcessReceivedData(Client &client, const Type &message_type) {
@@ -277,8 +283,10 @@ private:
         switch (message_type.type()) {
             //cout << message_type.type() << endl;
             case Type::CS_NAME:
-                cout << "name 진입" << endl;
-                //ProcessNameCommand(client, message_type);
+                if(command_flag){
+                    cout << "name 진입" << endl;
+                    ProcessNameCommand(client, message_type);
+                }
                 break;
             case Type::CS_CHAT:
                 //ProcessChatCommand(client, received_data);
@@ -295,7 +303,7 @@ private:
 
         message.erase(remove_if(message.begin(), message.end(), [](char c) { return isspace(static_cast<unsigned char>(c)); }), message.end());
 
-        cout << message << endl;
+        //cout << message << endl;
 
         incoming_data.clear();
     }
@@ -340,31 +348,24 @@ private:
     }
 
     void ProcessNameCommand(Client &client, const Type &message) {
-        CSName cs_name;
         vector<char> &incoming_data = client.GetReceivedData();
 
         string received_data(incoming_data.begin(), incoming_data.end());
+        //cout << received_data << endl;
 
-        if (cs_name.ParseFromString(received_data)) {
-            string new_name = cs_name.name();
-            cout << "현재 설정된 네임은: " << new_name << endl;
-            string old_name = client.GetReceivedData().empty() ? "이름 없음" : string(client.GetReceivedData().begin(), client.GetReceivedData().end());
+        string system_message;
+        
+        auto line_end_check = [](char c){
+            return c == '\n' || c == 'r';
+        };
 
-            client.GetReceivedData().clear();
-            client.GetReceivedData().insert(client.GetReceivedData().end(), new_name.begin(), new_name.end());
+        received_data.erase(remove_if(received_data.begin(), received_data.end(), line_end_check), received_data.end());
+        client_name = received_data;
 
-            string system_message;
-            if (client.GetReceivedData().empty()) {
-                system_message = "[시스템 메시지] 이름이 변경되었습니다.";
-            } else {
-                system_message = "[시스템 메시지] 이름이 " + old_name + "에서 " + new_name + "으로 변경되었습니다.";
-            }
+        system_message = "[시스템 메시지] 이름이 " + client_name + " 으로 변경되었습니다.";
+        cout << system_message << endl;
 
-            SendSystemMessage(client, system_message);
-        } else {
-            cerr << "Failed to parse CSName message." << endl;
-            // 오류 처리를 수행하거나 연결을 종료하도록 수정할 수 있습니다.
-        }
+        //SendSystemMessage(client, system_message);
     }
 
     void processRoomsCommand(Client& client) {
@@ -457,8 +458,8 @@ private:
     condition_variable cv;
 
     bool stop_flag;
-    bool header_flag;
-    bool type_flag;
+    bool type_flag;     // 타입 정보를 포함하는 메시지인지 (먼저 오는 메시지)
+    bool command_flag;  // 명령어 정보를 포함하는 메시지인지 (두 번째로 오는 메시지)
 
     vector<Room> rooms;
     int next_room_id = 1;   // room_id는 0부터 시작
