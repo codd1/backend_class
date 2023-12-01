@@ -1,3 +1,5 @@
+# 13. 멀티 쓰레드, 멀티 프로세스
+
 from flask import Flask
 
 app = Flask(__name__)
