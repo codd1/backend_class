@@ -11,3 +11,6 @@ def application(environ, start_response):       # Callable (첫 번째 인자는
 
 
 # $ uwsgi --socket 127.0.0.1:19176 --plugin /usr/lib/uwsgi/plugins/python3_plugin.so --module wsgi
+
+# 브라우저 열고 http://sysdesignlab.mju.ac.kr/60202270 입력
+# $ curl -X GET http://sysdesignlab.mju.ac.kr/60202270
