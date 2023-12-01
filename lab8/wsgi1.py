@@ -1,3 +1,5 @@
+# 11. WSGI가 기대하는 App Server Code 형태
+
 def application(environ, start_response):       # Callable (첫 번째 인자는 dict)
     print(environ['REQUEST_METHOD'])
     print(environ['PATH_INFO'])
