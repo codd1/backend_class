@@ -1,3 +1,5 @@
+# 12. HTTP Request body 읽기
+
 import json
 
 def application(environ, start_response):       # Callable (첫 번째 인자는 dict)
@@ -17,3 +19,5 @@ def application(environ, start_response):       # Callable (첫 번째 인자는
     return [bytes(response, encoding='utf-8')]     # HTTP body는 iterable이어야 함
 
 # $ uwsgi --ini uwsgi.ini --module wsgi2
+
+# $ curl -X POST http://localhost/60202270 -H "Content-Type: application/json; charset=utf-8" --data '{"name":"홍채영"}'
