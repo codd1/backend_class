@@ -24,6 +24,7 @@ class User(db.Model):
     user_name = db.Column(db.String(255))
     memo = db.Column(db.Text)
 
+
 @app.route('/')
 def home():
     # 쿠기를 통해 이전에 로그인 한 적이 있는지를 확인한다.
@@ -33,6 +34,11 @@ def home():
     userId = request.cookies.get('userId', default=None)
     name = None
 
+    # user_names = User.query.with_entities(User.user_name).all()
+    # print("모든 user_name:")
+    # for user_name in user_names:
+    #     print(user_name[0])
+
     ####################################################
     # TODO: 아래 부분을 채워 넣으시오.
     #       userId 로부터 DB 에서 사용자 이름을 얻어오는 코드를 여기에 작성해야 함
@@ -40,6 +46,10 @@ def home():
         # SQLAlchemy를 사용하여 데이터베이스에서 사용자 이름 가져오기
         user = User.query.filter_by(user_id=userId).first()
         name = user.user_name if user else None
+        print("1. user는?")
+        print(user)
+        print("2. name은?")
+        print(name)
 
     ####################################################
 
@@ -89,6 +99,8 @@ def onOAuthAuthorizationCodeRedirected():
     }
 
     response = requests.post(access_token_url, data=access_token_params)
+    print("Authorization Code")
+    print(authorization_code)
 
     # 3. 얻어낸 access token 을 이용해서 프로필 정보를 반환하는 API 를 호출하고,
     #    유저의 고유 식별 번호를 얻어낸다.
@@ -104,6 +116,8 @@ def onOAuthAuthorizationCodeRedirected():
         headers = {'Authorization': f'Bearer {access_token}'}  # 얻은 access token을 포함하는 헤더
 
         profile_response = requests.get(profile_url, headers=headers)  # 프로필 정보를 가져옴
+        print("Access Token")
+        print(access_token)
 
         if profile_response.status_code == 200:
             user_info = profile_response.json().get('response', {})
@@ -113,12 +127,11 @@ def onOAuthAuthorizationCodeRedirected():
             # 4. 얻어낸 user id 와 name 을 DB 에 저장한다.
             if user_id and user_name:
                 try:
-                    # SQLAlchemy를 사용하여 데이터베이스에 유저 정보 저장
-                    user = User.query.filter_by(user_id=user_id).first()
+                    user = User.query.filter_by(user_id=user_id).first()        # DB에 user_id에 해당하는 사용자가 있는지 조회하고 첫 번째 결과 저장
                     if user:
-                        user.user_name = user_name
+                        user.user_name = user_name      # 이미 등록된 사용자인 경우
                     else:
-                        new_user = User(user_id=user_id, user_name=user_name)
+                        new_user = User(user_id=user_id, user_name=user_name)   # 새로운 사용자인 경우 DB에 사용자 정보 저장
                         db.session.add(new_user)
                     db.session.commit()
                 except Exception as e:
@@ -127,10 +140,8 @@ def onOAuthAuthorizationCodeRedirected():
 
                 # 5. 첫 페이지로 redirect 하는데 로그인 쿠키를 설정하고 보내준다.
                 response = redirect('/')
-                response.set_cookie('userId', str(user_id))  # +
-                print(response)
+                response.set_cookie('userId', user_id)
                 print("성공!!")
-                print(user_id)
                 return response
             else:
                 # user_id 또는 user_name이 없는 경우
@@ -161,6 +172,7 @@ def get_memos():
         result = [{'content': memo} for memo in memos]
     except Exception as e:
         print(f"Error while fetching memos: {e}")
+        result = []
 
     # # memos라는 키 값으로 메모 목록 보내주기
     return Response(json.dumps({'memos': result}), content_type='application/json')
