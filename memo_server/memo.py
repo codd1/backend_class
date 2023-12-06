@@ -4,7 +4,7 @@ import requests
 import json
 import urllib
 
-from flask import abort, Flask, make_response, render_template, Response, redirect, request
+from flask import abort, Flask, make_response, render_template, Response, redirect, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
@@ -20,10 +20,13 @@ db = SQLAlchemy(app)
 
 class User(db.Model):
     __tablename__ = 'user_db'
-    user_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(db.String(255), primary_key=True)
     user_name = db.Column(db.String(255))
     memo = db.Column(db.Text)
 
+# DB에 user_db 테이블이 없으면 테이블을 생성
+with app.app_context():
+    db.create_all()
 
 @app.route('/')
 def home():
@@ -34,11 +37,6 @@ def home():
     userId = request.cookies.get('userId', default=None)
     name = None
 
-    # user_names = User.query.with_entities(User.user_name).all()
-    # print("모든 user_name:")
-    # for user_name in user_names:
-    #     print(user_name[0])
-
     ####################################################
     # TODO: 아래 부분을 채워 넣으시오.
     #       userId 로부터 DB 에서 사용자 이름을 얻어오는 코드를 여기에 작성해야 함
@@ -46,9 +44,6 @@ def home():
         # SQLAlchemy를 사용하여 데이터베이스에서 사용자 이름 가져오기
         user = User.query.filter_by(user_id=userId).first()
         name = user.user_name if user else None
-        print("1. user는?")
-        print(user)
-        print("2. name은?")
         print(name)
 
     ####################################################
@@ -168,14 +163,16 @@ def get_memos():
     try:
         # SQLAlchemy를 사용하여 데이터베이스에서 메모들을 가져오기
         user = User.query.filter_by(user_id=userId).first()
-        memos = user.memo.split('\n') if user and user.memo else []
-        result = [{'content': memo} for memo in memos]
+        if user and user.memo:
+            memos = user.memo.split('\n')
+            result = [{'text': memo} for memo in memos if memo]
+        print(result)
     except Exception as e:
         print(f"Error while fetching memos: {e}")
         result = []
 
     # # memos라는 키 값으로 메모 목록 보내주기
-    return Response(json.dumps({'memos': result}), content_type='application/json')
+    return jsonify({'memos': result})
 
 
 @app.route('/memo', methods=['POST'])
@@ -200,10 +197,10 @@ def post_new_memo():
     except Exception as e:
         print(f"Error while saving memo: {e}")
         db.session.rollback()
-        return Response(json.dumps({'error': 'Failed to save memo'}), content_type='application/json'), HTTPStatus.INTERNAL_SERVER_ERROR
+        return jsonify({'error': 'Failed to save memo'}), HTTPStatus.INTERNAL_SERVER_ERROR
 
     #
-    return '', HTTPStatus.OK
+    return jsonify({}), HTTPStatus.OK
 
 if __name__ == '__main__':
     app.run('0.0.0.0', port=8000, debug=True)
