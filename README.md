@@ -7,7 +7,13 @@ ___
 ### [미니프로젝트1] 채팅 서버 만들기
 과제 설명: https://github.com/mjubackend/chat_client
 
+#### 1. 채팅 서버 프로젝트 완성본 설명
+클라이언트, 서버 간 채팅 가능
 
+`/name` 기능 구현
+
+메시지 형태는 Protobuf를 이용했습니다.
+___
 ### [미니프로젝트2] 메모장 서비스 만들기
 과제 설명: https://github.com/mjubackend/memo_server
 
