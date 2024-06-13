@@ -1,5 +1,5 @@
 # 📝 메모장 서비스
-과제 설명: https://github.com/mjubackend/chat_client
+과제 설명: https://github.com/mjubackend/memo_server
 ## 1. Local 환경
 
 ### 📽️ 데모 영상
