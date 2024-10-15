@@ -20,9 +20,6 @@ using namespace std;
 using namespace mju;
 
 
-mutex client_name_mutex;
-string client_name;
-
 class Client {
 public:
     Client(){
@@ -37,13 +34,8 @@ public:
         return socket_;
     }
 
-    vector<char>& GetReceivedData() {
-        return received_data;
-    }
-
 private:
     int socket_;
-    vector<char> received_data;
 };
 
 class Server {
@@ -64,7 +56,7 @@ public:
         for (int i = 0; i < num_thread_; i++) {
             // 스레드 생성
             cout << "메시지 작업 쓰레드 #" << i << " 생성" << endl;
-            threads.emplace_back(&Server::WorkerThread, this, t);
+            threads.emplace_back(&Server::WorkerThread, this, t);   // 새로운 쓰레드 생성 후 WorkerThread 함수 실행
         }
 
         while (1) {
@@ -156,56 +148,6 @@ private:
         cout << "새로운 클라이언트 접속 [('" << client_ip << "', " << client_port << ")]" << endl;
     }
 
-    void ReceiveData(Client &client, Type* t) {
-        int socket = client.GetSocket();
-        vector<char> &incoming_data = client.GetReceivedData();
-
-        if (incoming_data.size() < sizeof(uint16_t)) {
-            char header_buffer[sizeof(uint16_t)];
-            ssize_t received_header_bytes = recv(socket, header_buffer, sizeof(header_buffer), 0);
-
-            if(RecvErrorHandling(socket, received_header_bytes)){
-                incoming_data.clear();
-                return;
-            }
-
-            incoming_data.insert(incoming_data.end(), header_buffer, header_buffer + sizeof(uint16_t));
-        }
-
-        uint16_t message_length;
-        memcpy(&message_length, incoming_data.data(), sizeof(uint16_t));
-        message_length = ntohs(message_length);
-
-        while (incoming_data.size() < sizeof(uint16_t) + message_length) {
-            char buffer[MAX_BUFFER_SIZE];
-            ssize_t received_bytes = recv(socket, buffer, min(sizeof(buffer), static_cast<size_t>(message_length)), 0);
-
-            if(RecvErrorHandling(socket, received_bytes)){
-                incoming_data.clear();
-                return;
-            }
-
-            //cout << "Received bytes: " << received_bytes << endl;
-            incoming_data.insert(incoming_data.end(), buffer, buffer + received_bytes);
-        }
-
-        Type message;
-        if (message.ParseFromArray(incoming_data.data() , message_length) + sizeof(uint16_t)) {
-            /*if(type_flag){
-                t->set_type(Type::CS_NAME);
-                type_flag = false;
-                return;
-            } else {
-                ProcessReceivedData(client, message);
-                incoming_data.clear();
-                type_flag = true;
-            }*/
-        } else {
-            exit(1);
-        }
-        
-    }
-
     bool RecvErrorHandling(int socket, ssize_t recv_bytes){
         if (recv_bytes <= 0) {
             if (recv_bytes == 0) {
@@ -224,30 +166,6 @@ private:
         } else{
             return false;
         }
-    }
-
-    void ProcessReceivedData(Client &client, const Type &type) {
-        // 클라이언트로부터 수신한 데이터 처리
-        //cout << message_type.GetTypeName() << endl;
-        Type::MessageType messageType = type.type();
-        //cout << "Message Type: " << MessageTypeToString(messageType) << std::endl;
-
-        switch (messageType) {
-            case Type::CS_NAME:
-                ProcessNameCommand(client, type);
-                break;
-            case Type::CS_CHAT:
-                //ProcessChatCommand(client, received_data);
-                break;
-            default:
-                cerr << "Unknown message type." << messageType << endl;
-                break;
-        }
-
-        vector<char> &incoming_data = client.GetReceivedData();
-        string message(incoming_data.begin(), incoming_data.end());
-        message.erase(remove_if(message.begin(), message.end(), [](char c) { return isspace(static_cast<unsigned char>(c)); }), message.end());
-        incoming_data.clear();
     }
 
     void SetNonBlocking(int socket) {
@@ -289,88 +207,6 @@ private:
         }
     }
 
-    void ProcessNameCommand(Client &client, const Type &message) {
-        vector<char> &incoming_data = client.GetReceivedData();
-
-        string received_data(incoming_data.begin(), incoming_data.end());
-
-        string system_message;
-        
-        auto line_end_check = [](char c){
-            return c == '\n' || c == 'r';
-        };
-
-        received_data.erase(remove_if(received_data.begin(), received_data.end(), line_end_check), received_data.end());
-
-        // client_name에 대한 접근 동기화
-        {
-            lock_guard<mutex> lock(client_name_mutex);
-            client_name = received_data;
-        }
-
-        system_message = "이름이 " + client_name + " 으로 변경되었습니다.";
-        cout << "[시스템 메시지] " << system_message << endl;
-
-        Type::MessageType messageType = message.type();
-        //cout << "Message Type: " << MessageTypeToString(messageType) << std::endl;
-
-        SendSystemMessage(client, system_message);
-
-        //incoming_data.clear();
-    }
-
-    void SendSystemMessage(Client &client, const string &system_message) {
-        // SCSystemMessage 객체 생성
-        SCSystemMessage system_message_data;
-        system_message_data.set_text(system_message);
-
-        Type type_message;
-        type_message.set_type(Type::SC_SYSTEM_MESSAGE);
-
-        SendMessage(client, type_message, system_message_data);
-    }
-
-    // S->C
-    void SendMessage(Client &client, const Type& type_message, const SCSystemMessage &system_message) {
-        // 메시지를 직렬화
-        string serialized_message;
-        string serialized_type;
-
-        // type,system 메시지를 직렬화
-        type_message.SerializeToString(&serialized_type);
-        system_message.SerializeToString(&serialized_message);
-
-        // 메시지 길이 전송
-        uint16_t message_length = htons(static_cast<uint16_t>(serialized_type.size()));
-        send(client.GetSocket(), &message_length, sizeof(uint16_t), 0);
-
-        // 직렬화된 타입 전송
-        send(client.GetSocket(), serialized_type.c_str(), serialized_type.size(), 0);
-
-        message_length = htons(static_cast<uint16_t>(serialized_message.size()));
-        send(client.GetSocket(), &message_length, sizeof(uint16_t), 0);
-
-        // 직렬화된 시스템 메시지 전송
-        send(client.GetSocket(), serialized_message.c_str(), serialized_message.size(), 0);
-    }
-
-    // MessageType에 대응하는 문자열을 반환하는 함수
-    const char* MessageTypeToString(Type::MessageType messageType) {
-        switch (messageType) {
-            case Type::CS_NAME: return "CS_NAME";                       // 닉네임 변경
-            case Type::CS_ROOMS: return "CS_ROOMS";                     // 방 목록 출력 요청
-            case Type::CS_CREATE_ROOM: return "CS_CREATE_ROOM";         // 방 생성
-            case Type::CS_JOIN_ROOM: return "CS_JOIN_ROOM";             // 방 입장
-            case Type::CS_LEAVE_ROOM: return "CS_LEAVE_ROOM";           // 방 나가기
-            case Type::CS_CHAT: return "CS_CHAT";                       // 채팅 보내기 (Default)
-            case Type::CS_SHUTDOWN: return "CS_SHUTDOWN";               // 채팅 서버 종료
-            case Type::SC_ROOMS_RESULT: return "SC_ROOMS_RESULT";       // 서버 측에서 방 목록 출력
-            case Type::SC_CHAT: return "SC_CHAT";                       // 서버 측에서의 채팅 처리
-            case Type::SC_SYSTEM_MESSAGE: return "SC_SYSTEM_MESSAGE";   // 서버->클라 시스템 메시지 전송
-            default: return "Unknown";
-        }
-    }
-
 private:
     int passive_sock;
     fd_set rfds, temp_rfds;     // rfds: 서버가 감시할 원본 소켓 집합
@@ -392,7 +228,7 @@ private:
 
     int next_room_id = 1;   // room_id는 0부터 시작
 
-    SCSystemMessage system_message_;
+    queue<string> message_queue;  // 메시지를 저장할 큐
 };
 
 int main(int argc, char *argv[]) {

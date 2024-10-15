@@ -50,9 +50,6 @@ class Server {
 public:
     Server(int port, int num_thread){
         num_thread_ = num_thread;
-        stop_flag = false; 
-        type_flag = true;
-        command_flag = true;
         BindConnection(port);
         threads.resize(num_thread_);
     }
@@ -67,14 +64,10 @@ public:
         for (int i = 0; i < num_thread_; i++) {
             // 스레드 생성
             cout << "메시지 작업 쓰레드 #" << i << " 생성" << endl;
-            threads.emplace_back(thread([this, t] { WorkerThread(t); }));
+            threads.emplace_back(&Server::WorkerThread, this, t);
         }
 
         while (1) {
-            if (stop_flag){
-                break;
-            }
-
             temp_rfds = rfds;
             
             int active_socket_count = select(max_fd + 1, &temp_rfds, NULL, NULL, NULL);
@@ -83,6 +76,7 @@ public:
                 cerr << "select() failed: " << strerror(errno) << endl;
                 break;
             }
+
             // 소켓이 읽기 가능한 상태
             // 새로운 클라이언트가 서버에 연결을 시도하면 select 함수가 수동 소켓에 대한 읽기 이벤트를 감지
             if (FD_ISSET(passive_sock, &temp_rfds)) {
@@ -91,8 +85,7 @@ public:
 
             for (int i = 0; i < active_socket_count; i++) {
                 Client &client = clients[i];
-                //cout << "Client.GetSocket(): " << client.GetSocket() << endl;
-                //cout << i << endl;
+
                 if(client.GetSocket() == passive_sock){
                     continue;
                 }
@@ -100,12 +93,7 @@ public:
                     ReceiveData(client, &type_);
                     ReceiveData(client, t);
                 }
-                //cout << "-------------------" << endl;
-            }
-            if(command_flag){
-                command_flag = false;
-            } else{
-                command_flag = true;
+
             }
         }
     }
@@ -154,7 +142,7 @@ private:
             exit(1);
         }
 
-        // 클라이언트의 IP 주소와 port 주소 얻기 (데모 서버처럼 출력하기 위함)
+        // 클라이언트의 IP 주소와 port 주소 얻기 (클라이언트 정보를 출력하기 위함)
         inet_ntop(AF_INET, &(client_sin.sin_addr), client_ip, INET_ADDRSTRLEN);
         client_port = ntohs(client_sin.sin_port);
 
@@ -162,14 +150,10 @@ private:
         FD_SET(client_sock, &rfds);
         max_fd = max(max_fd, client_sock);
 
-        {
-            unique_lock<mutex> lock(m);
-            clients.emplace_back(client_sock);
-        }
+        // AcceptConnection() 함수는 메인 스레드에서만 호출되기 때문에 mutex를 사용하여 동기화할 필요 X
+        clients.emplace_back(client_sock);      // clients 벡터에 클라이언트 추가
 
         cout << "새로운 클라이언트 접속 [('" << client_ip << "', " << client_port << ")]" << endl;
-
-        cv.notify_one();
     }
 
     void ReceiveData(Client &client, Type* t) {
@@ -207,7 +191,7 @@ private:
 
         Type message;
         if (message.ParseFromArray(incoming_data.data() , message_length) + sizeof(uint16_t)) {
-            if(type_flag){
+            /*if(type_flag){
                 t->set_type(Type::CS_NAME);
                 type_flag = false;
                 return;
@@ -215,9 +199,8 @@ private:
                 ProcessReceivedData(client, message);
                 incoming_data.clear();
                 type_flag = true;
-            }
+            }*/
         } else {
-            //cout << "파싱 실패!!!" << endl;
             exit(1);
         }
         
@@ -251,9 +234,7 @@ private:
 
         switch (messageType) {
             case Type::CS_NAME:
-                if(command_flag){
-                    ProcessNameCommand(client, type);
-                }
+                ProcessNameCommand(client, type);
                 break;
             case Type::CS_CHAT:
                 //ProcessChatCommand(client, received_data);
@@ -276,7 +257,7 @@ private:
             exit(1);
         }
 
-        if (fcntl(socket, F_SETFL, flag | O_NONBLOCK) < 0) {
+        if (fcntl(socket, F_SETFL, flag | O_NONBLOCK) < 0) {    // 소켓을 논블로킹 모드로 설정
             cerr << "fcntl() failed: " << strerror(errno) << endl;
             exit(1);
         }
@@ -286,16 +267,11 @@ private:
     void WorkerThread(Type *t) {
         while (true) {
             Client c;
-
             {
                 unique_lock<mutex> lock(m);
                 
                 // 스레드 대기 상태(wait) -> 대기 중인 클라이언트가 없고 stop flag가 설정되었을 때 스레드 종료
-                cv.wait(lock, [this] { return !clients.empty() || stop_flag; });
-
-                if (stop_flag) {
-                    break;
-                }
+                cv.wait(lock, [this] { return !clients.empty(); });
 
                 // 대기 중인 클라이언트가 있을 때 클라이언트를 가져오고 리스트에서 제거
                 if (!clients.empty()) {
@@ -309,7 +285,7 @@ private:
                 continue;
             }
 
-            ReceiveAndBroadcastChatMessages(c);
+            //ReceiveAndBroadcastChatMessages(c);
         }
     }
 
@@ -378,64 +354,29 @@ private:
         send(client.GetSocket(), serialized_message.c_str(), serialized_message.size(), 0);
     }
 
-    void ReceiveAndBroadcastChatMessages(Client &client) {
-        vector<char> &incoming_data = client.GetReceivedData();
-
-        // 채팅 메시지 처리
-        if (incoming_data.size() > sizeof(uint16_t)) {
-            Type type;
-            if (type.ParseFromArray(incoming_data.data() , incoming_data.size())) {
-                ProcessReceivedData(client, type);
-
-                // 모든 클라이언트에게 채팅 메시지 전파
-                BroadcastChatMessage(client, incoming_data.data());
-
-                // 수신한 데이터 초기화
-                incoming_data.clear();
-            } else {
-                cerr << "메시지 파싱 실패!!!" << endl;
-                exit(1);
-            }
-        }
-    }
-
-    void BroadcastChatMessage(Client &sender, const string &system_message) {
-
-        SCSystemMessage system_message_data;
-        system_message_data.set_text(system_message);
-
-        // SC_CHAT 타입 생성
-        Type chat_type;
-        chat_type.set_type(Type::SC_CHAT);
-
-        // 모든 클라이언트에게 메시지 전송
-        for (auto &recipient : clients) {
-            if (recipient.GetSocket() != sender.GetSocket()) {
-                SendMessage(recipient, chat_type, system_message_data);
-            }
-        }
-    }
-
     // MessageType에 대응하는 문자열을 반환하는 함수
     const char* MessageTypeToString(Type::MessageType messageType) {
         switch (messageType) {
-            case Type::CS_NAME: return "CS_NAME";
-            case Type::CS_ROOMS: return "CS_ROOMS";
-            case Type::CS_CREATE_ROOM: return "CS_CREATE_ROOM";
-            case Type::CS_JOIN_ROOM: return "CS_JOIN_ROOM";
-            case Type::CS_LEAVE_ROOM: return "CS_LEAVE_ROOM";
-            case Type::CS_CHAT: return "CS_CHAT";
-            case Type::CS_SHUTDOWN: return "CS_SHUTDOWN";
-            case Type::SC_ROOMS_RESULT: return "SC_ROOMS_RESULT";
-            case Type::SC_CHAT: return "SC_CHAT";
-            case Type::SC_SYSTEM_MESSAGE: return "SC_SYSTEM_MESSAGE";
+            case Type::CS_NAME: return "CS_NAME";                       // 닉네임 변경
+            case Type::CS_ROOMS: return "CS_ROOMS";                     // 방 목록 출력 요청
+            case Type::CS_CREATE_ROOM: return "CS_CREATE_ROOM";         // 방 생성
+            case Type::CS_JOIN_ROOM: return "CS_JOIN_ROOM";             // 방 입장
+            case Type::CS_LEAVE_ROOM: return "CS_LEAVE_ROOM";           // 방 나가기
+            case Type::CS_CHAT: return "CS_CHAT";                       // 채팅 보내기 (Default)
+            case Type::CS_SHUTDOWN: return "CS_SHUTDOWN";               // 채팅 서버 종료
+            case Type::SC_ROOMS_RESULT: return "SC_ROOMS_RESULT";       // 서버 측에서 방 목록 출력
+            case Type::SC_CHAT: return "SC_CHAT";                       // 서버 측에서의 채팅 처리
+            case Type::SC_SYSTEM_MESSAGE: return "SC_SYSTEM_MESSAGE";   // 서버->클라 시스템 메시지 전송
             default: return "Unknown";
         }
     }
 
 private:
     int passive_sock;
-    fd_set rfds, temp_rfds;
+    fd_set rfds, temp_rfds;     // rfds: 서버가 감시할 원본 소켓 집합
+                                // temp_rfds: select 호출 후, 읽기 가능한 소켓 상태를 확인하기 위한 임시 복사본.
+                                // select 함수는 원본 rfds를 수정하여, 읽기 가능한 소켓만 남겨두고 나머지는 제거한다.
+                                // 따라서, rfds를 변경하지 않고도 select의 결과를 처리할 수 있도록 temp_rfds에 원본 소켓 집합을 복사해 사용
     int max_fd;
     Type type_;
 
@@ -449,17 +390,13 @@ private:
     mutex m;
     condition_variable cv;
 
-    bool stop_flag;
-    bool type_flag;     // 타입 정보를 포함하는 메시지인지 (먼저 오는 메시지)
-    bool command_flag;  // 명령어 정보를 포함하는 메시지인지 (두 번째로 오는 메시지)
-
     int next_room_id = 1;   // room_id는 0부터 시작
 
     SCSystemMessage system_message_;
 };
 
 int main(int argc, char *argv[]) {
-    // g++ -o server server.cpp message.pb.cc -lprotobuf
+    // g++ -o server2 server2.cpp message.pb.cc -lprotobuf
     // ./server 9176 3
     if (argc != 3) {
         return 1;
