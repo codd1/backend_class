@@ -176,7 +176,7 @@ private:
             message_size = ntohs(message_size);     // 클라이언트 측에서 network byte order로 전송하기 때문에 서버 측에서 host byte order로 변환해야 함
 
             // message_size에 따라 충분한 데이터가 있는지 확인
-            if (total_bytes < 2 + message_size) {
+            if (total_bytes < message_size + 2) {
                 cout << "[Error] 메시지가 모두 도착하지 않았습니다." << endl;
                 return;
             }
@@ -189,16 +189,16 @@ private:
             }
 
             // 타입 메시지 출력
-            cout << "Type message(enum) received: " << type_message.type() << endl;
+            //cout << "Type message(enum) received: " << type_message.type() << endl;
 
             // 처리할 메시지 크기
             size_t real_data_bytes = 2 + message_size;
 
             switch (type_message.type()) {
-                case Type::CS_CHAT: {
+                case Type::CS_NAME:{
                     // 다음 메시지 크기 읽기 (채팅 텍스트)
-                    if (total_bytes < real_data_bytes + 2) {
-                        cout << "[Error]1 메시지가 모두 도착하지 않았습니다." << endl;
+                    if (total_bytes < real_data_bytes) {
+                        cout << "[Error] 메시지가 모두 도착하지 않았습니다." << endl;
                         return;
                     }
 
@@ -209,7 +209,37 @@ private:
 
                     // 메시지 크기에 따라 데이터가 있는지 확인
                     if (total_bytes < real_data_bytes + 2 + chat_message_size) {
+                        //cout << "[Error] 메시지가 모두 도착하지 않았습니다." << endl;
+                        return;
+                    }
+
+                    // 채팅 메시지 파싱
+                    CSName name_message;
+                    if (!name_message.ParseFromArray(buffer + real_data_bytes + 2, chat_message_size)) {
+                        cerr << "Failed to parse CSName message." << endl;
+                    } else {
+                        // 메시지 처리 (예: 채팅 메시지 출력)
+                        cout << "[" << client_port << "] 유저의 이름이 " << name_message.name() << " (으)로 변경되었습니다." << endl;
+                    }
+
+                    real_data_bytes += 2 + chat_message_size; // 채팅 메시지 크기 추가
+                    break;
+                }
+                case Type::CS_CHAT: {
+                    // 다음 메시지 크기 읽기 (채팅 텍스트)
+                    if (total_bytes < real_data_bytes) {
                         cout << "[Error] 메시지가 모두 도착하지 않았습니다." << endl;
+                        return;
+                    }
+
+                    // 다음 2바이트를 읽어 메시지 크기
+                    uint16_t chat_message_size;
+                    memcpy(&chat_message_size, buffer + real_data_bytes, sizeof(chat_message_size));
+                    chat_message_size = ntohs(chat_message_size);
+
+                    // 메시지 크기에 따라 데이터가 있는지 확인
+                    if (total_bytes < real_data_bytes + 2 + chat_message_size) {
+                        //cout << "[Error] 메시지가 모두 도착하지 않았습니다." << endl;
                         return;
                     }
 
@@ -219,7 +249,7 @@ private:
                         cerr << "Failed to parse CSChat message." << endl;
                     } else {
                         // 메시지 처리 (예: 채팅 메시지 출력)
-                        cout << "Chat message received: " << chat_message.text() << endl;
+                        cout << "[" << client_port << "]: " << chat_message.text() << endl;
                     }
 
                     real_data_bytes += 2 + chat_message_size; // 채팅 메시지 크기 추가
@@ -227,7 +257,7 @@ private:
                 }
                 default:
                     cerr << "Unknown message type." << endl;
-                    break;
+                    return;
             }
 
             // 처리된 데이터 크기만큼 buffer에서 제거
@@ -250,33 +280,6 @@ private:
             return true;
         } else {
             return false;
-        }
-    }
-
-    void ParseProtobufMessage(const string& data) {
-        Type type_message;
-
-        // TypeMessage를 파싱
-        if (!type_message.ParseFromString(data)) {
-            cerr << "Failed to parse TypeMessage." << endl;
-            return;
-        }
-
-        // type_message에 따라 다른 메시지 처리
-        switch (type_message.type()) {
-            case Type::CS_NAME: {
-                CSName name_message;
-                // 이후 CSName 메시지를 받아서 파싱
-                if (!name_message.ParseFromString(data.substr(sizeof(Type)))) {
-                    cerr << "Failed to parse CSName." << endl;
-                }
-
-                break;
-            }
-
-            default:
-                cerr << "Unknown message type." << endl;
-                break;
         }
     }
 
