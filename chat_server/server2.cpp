@@ -27,10 +27,27 @@ public:
     string GetIp() const { return ip_; }
     int GetPort() const { return port_; }
 
+    string GetName() const { return name_; }
+    int GetRoomId() const { return room_id_; }
+
+    void SetName(string name) { name_ = name; }
+    void SetRoomId(int room_id) { room_id_ = room_id; }
+
 private:
     int socket_;
     string ip_;
     int port_;
+
+    string name_ = "unknown";
+    int room_id_ = 0;
+};
+
+class Room {
+public:
+    Room(const string& title) : title(title) {}
+
+    string title;           // 방 제목
+    int member_count = 0;       // 방 멤버 수
 };
 
 class Server {
@@ -208,25 +225,34 @@ private:
                     }
 
                     // 다음 2바이트를 읽어 메시지 크기
-                    uint16_t chat_message_size;
-                    memcpy(&chat_message_size, buffer + real_data_bytes, sizeof(chat_message_size));
-                    chat_message_size = ntohs(chat_message_size);
+                    uint16_t room_message_size;
+                    memcpy(&room_message_size, buffer + real_data_bytes, sizeof(room_message_size));
+                    room_message_size = ntohs(room_message_size);
 
                     // 메시지 크기에 따라 데이터가 있는지 확인
-                    if (total_bytes < real_data_bytes + 2 + chat_message_size) {
+                    if (total_bytes < real_data_bytes + 2 + room_message_size) {
                         return;
                     }
 
                     // 채팅 메시지 파싱
                     CSCreateRoom room_message;
-                    if (!room_message.ParseFromArray(buffer + real_data_bytes + 2, chat_message_size)) {
+                    if (!room_message.ParseFromArray(buffer + real_data_bytes + 2, room_message_size)) {
                         cerr << "Failed to parse CSCreateRoom message." << endl;
                     } else {
                         // 메시지 처리 (예: 채팅 메시지 출력)
-                        cout << "[" << client.GetPort() << "] 유저가 \"" << room_message.title() << "\" 방을 생성했습니다. "  << endl;
+                        string room_title = room_message.title();
+                        int room_id = next_room_id++;
+
+                        Room new_room(room_title);
+                        rooms.push_back(new_room);      // 방 목록에 새 방 추가
+
+                        client.SetRoomId(room_id);      // 방 만들면서 방장이 방에 들어감
+                        new_room.member_count++;        // 방 멤버 수 추가
+
+                        cout << "[" << client.GetPort() << "] 유저가 \"" << room_title << "\" 방을 생성했습니다. "  << endl;
                     }
 
-                    real_data_bytes += 2 + chat_message_size; // 채팅 메시지 크기 추가
+                    real_data_bytes += 2 + room_message_size; // 채팅 메시지 크기 추가
                     break;
                 }
                 case Type::CS_JOIN_ROOM:
@@ -253,7 +279,7 @@ private:
                         cerr << "Failed to parse CSChat message." << endl;
                     } else {
                         // 메시지 처리 (예: 채팅 메시지 출력)
-                        cout << "[" << client.GetPort() << "]: " << chat_message.text() << endl;
+                        cout << "[" << client.GetRoomId() << "] " << "[" << client.GetName() << "]: " << chat_message.text() << endl;
                     }
 
                     real_data_bytes += 2 + chat_message_size; // 채팅 메시지 크기 추가
@@ -280,7 +306,7 @@ private:
                         cerr << "Failed to parse CSName message." << endl;
                     } else {
                         // 메시지 처리 (예: 채팅 메시지 출력)
-                        cout << "Name message received: " << name_message.name() << endl;
+                        client.SetName(name_message.name());
                         cout << "[시스템 메시지] " << client.GetPort() << " 유저의 이름이 " << name_message.name() << " 으로 변경되었습니다." << endl;
                     }
 
@@ -355,6 +381,7 @@ private:
     mutex m;
     condition_variable cv;
 
+    vector<Room> rooms;
     int next_room_id = 1;
 };
 
