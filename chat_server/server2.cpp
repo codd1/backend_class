@@ -190,13 +190,13 @@ private:
             }
 
             // 타입 메시지 출력
-            cout << "Type message(enum) received: " << type_message.type() << endl;
+            //cout << "Type message(enum) received: " << type_message.type() << endl;
 
             // 처리할 메시지 크기
             size_t real_data_bytes = 2 + message_size;
 
             switch (type_message.type()) {
-                case Type::CS_CHAT: {
+                case Type::CS_NAME:{
                     // 다음 메시지 크기 읽기 (채팅 텍스트)
                     if (total_bytes < real_data_bytes) {
                         return;
@@ -209,15 +209,79 @@ private:
 
                     // 메시지 크기에 따라 데이터가 있는지 확인
                     if (total_bytes < real_data_bytes + 2 + chat_message_size) {
+                        //cout << "[Error] 메시지가 모두 도착하지 않았습니다." << endl;
                         return;
                     }
+
+                    // 채팅 메시지 파싱
+                    CSName name_message;
+                    if (!name_message.ParseFromArray(buffer + real_data_bytes + 2, chat_message_size)) {
+                        cerr << "Failed to parse CSName message." << endl;
+                    } else {
+                        // 메시지 처리 (예: 채팅 메시지 출력)
+                        cout << "[" << client_port << "] 유저의 이름이 " << name_message.name() << " (으)로 변경되었습니다." << endl;
+                    }
+
+                    real_data_bytes += 2 + chat_message_size; // 채팅 메시지 크기 추가
+                    break;
+                }
+                case Type::CS_CREATE_ROOM: {
+                    // 다음 메시지 크기 읽기 (채팅 텍스트)
+                    if (total_bytes < real_data_bytes) {
+                        cout << "[Error] 메시지가 모두 도착하지 않았습니다." << endl;
+                        return;
+                    }
+
+                    // 다음 2바이트를 읽어 메시지 크기
+                    uint16_t chat_message_size;
+                    memcpy(&chat_message_size, buffer + real_data_bytes, sizeof(chat_message_size));
+                    chat_message_size = ntohs(chat_message_size);
+
+                    // 메시지 크기에 따라 데이터가 있는지 확인
+                    if (total_bytes < real_data_bytes + 2 + chat_message_size) {
+                        //cout << "[Error] 메시지가 모두 도착하지 않았습니다." << endl;
+                        return;
+                    }
+
+                    // 채팅 메시지 파싱
+                    CSCreateRoom room_message;
+                    if (!room_message.ParseFromArray(buffer + real_data_bytes + 2, chat_message_size)) {
+                        cerr << "Failed to parse CSCreateRoom message." << endl;
+                    } else {
+                        // 메시지 처리 (예: 채팅 메시지 출력)
+                        cout << "[" << client_port << "] 유저가 \"" << room_message.title() << "\" 방을 생성했습니다. "  << endl;
+                    }
+
+                    real_data_bytes += 2 + chat_message_size; // 채팅 메시지 크기 추가
+                    break;
+                }
+                case Type::CS_JOIN_ROOM:
+                    break;
+                case Type::CS_CHAT: {
+                    // 다음 메시지 크기 읽기 (채팅 텍스트)
+                    if (total_bytes < real_data_bytes) {
+                        cout << "[Error] 메시지가 모두 도착하지 않았습니다." << endl;
+                        return;
+                    }
+
+                    // 다음 2바이트를 읽어 메시지 크기
+                    uint16_t chat_message_size;
+                    memcpy(&chat_message_size, buffer + real_data_bytes, sizeof(chat_message_size));
+                    chat_message_size = ntohs(chat_message_size);
+
+                    // 메시지 크기에 따라 데이터가 있는지 확인
+                    if (total_bytes < real_data_bytes + 2 + chat_message_size) {
+                        //cout << "[Error] 메시지가 모두 도착하지 않았습니다." << endl;
+                        return;
+                    }
+
                     // 채팅 메시지 파싱
                     CSChat chat_message;
                     if (!chat_message.ParseFromArray(buffer + real_data_bytes + 2, chat_message_size)) {
                         cerr << "Failed to parse CSChat message." << endl;
                     } else {
                         // 메시지 처리 (예: 채팅 메시지 출력)
-                        cout << "Chat message received: " << chat_message.text() << endl;
+                        cout << "[" << client_port << "]: " << chat_message.text() << endl;
                     }
 
                     real_data_bytes += 2 + chat_message_size; // 채팅 메시지 크기 추가
@@ -251,9 +315,15 @@ private:
                     real_data_bytes += 2 + name_message_size; // 채팅 메시지 크기 추가
                     break;
                 }
+                case Type::CS_ROOMS:
+                    break;
+                case Type::CS_LEAVE_ROOM:
+                    break;
+                case Type::CS_SHUTDOWN:
+                    break;
                 default:
                     cerr << "Unknown message type." << endl;
-                    break;
+                    return;
             }
 
             // 처리된 데이터 크기만큼 buffer에서 제거
