@@ -69,8 +69,10 @@ public:
                     continue;
                 }
 
-                if (FD_ISSET(client.GetSocket(), &temp_rfds)) {
-                    ReceiveData(client);
+                for (size_t i = 0; i < clients.size(); i++) {       // 모든 소켓에 대한 이벤트를 체크하도록 수정
+                    if (FD_ISSET(clients[i].GetSocket(), &temp_rfds)) {
+                        ReceiveData(clients[i]);
+                    }
                 }
             }
         }
@@ -177,7 +179,6 @@ private:
 
             // message_size에 따라 충분한 데이터가 있는지 확인
             if (total_bytes < 2 + message_size) {
-                cout << "[Error] 메시지가 모두 도착하지 않았습니다." << endl;
                 return;
             }
 
@@ -197,8 +198,7 @@ private:
             switch (type_message.type()) {
                 case Type::CS_CHAT: {
                     // 다음 메시지 크기 읽기 (채팅 텍스트)
-                    if (total_bytes < real_data_bytes + 2) {
-                        cout << "[Error]1 메시지가 모두 도착하지 않았습니다." << endl;
+                    if (total_bytes < real_data_bytes) {
                         return;
                     }
 
@@ -209,10 +209,8 @@ private:
 
                     // 메시지 크기에 따라 데이터가 있는지 확인
                     if (total_bytes < real_data_bytes + 2 + chat_message_size) {
-                        cout << "[Error] 메시지가 모두 도착하지 않았습니다." << endl;
                         return;
                     }
-
                     // 채팅 메시지 파싱
                     CSChat chat_message;
                     if (!chat_message.ParseFromArray(buffer + real_data_bytes + 2, chat_message_size)) {
@@ -223,6 +221,34 @@ private:
                     }
 
                     real_data_bytes += 2 + chat_message_size; // 채팅 메시지 크기 추가
+                    break;
+                }
+                case Type::CS_NAME: {
+                    // 다음 메시지 크기 읽기 (채팅 텍스트)
+                    if (total_bytes < real_data_bytes) {
+                        return;
+                    }
+
+                    // 다음 2바이트를 읽어 메시지 크기
+                    uint16_t name_message_size;
+                    memcpy(&name_message_size, buffer + real_data_bytes, sizeof(name_message_size));
+                    name_message_size = ntohs(name_message_size);
+
+                    // 메시지 크기에 따라 데이터가 있는지 확인
+                    if (total_bytes < real_data_bytes + 2 + name_message_size) {
+                        return;
+                    }
+                    // 채팅 메시지 파싱
+                    CSName name_message;
+                    if (!name_message.ParseFromArray(buffer + real_data_bytes + 2, name_message_size)) {
+                        cerr << "Failed to parse CSName message." << endl;
+                    } else {
+                        // 메시지 처리 (예: 채팅 메시지 출력)
+                        cout << "Name message received: " << name_message.name() << endl;
+                        cout << "[시스템 메시지] " << client_port << " 유저의 이름이 " << name_message.name() << " 으로 변경되었습니다." << endl;
+                    }
+
+                    real_data_bytes += 2 + name_message_size; // 채팅 메시지 크기 추가
                     break;
                 }
                 default:
@@ -250,33 +276,6 @@ private:
             return true;
         } else {
             return false;
-        }
-    }
-
-    void ParseProtobufMessage(const string& data) {
-        Type type_message;
-
-        // TypeMessage를 파싱
-        if (!type_message.ParseFromString(data)) {
-            cerr << "Failed to parse TypeMessage." << endl;
-            return;
-        }
-
-        // type_message에 따라 다른 메시지 처리
-        switch (type_message.type()) {
-            case Type::CS_NAME: {
-                CSName name_message;
-                // 이후 CSName 메시지를 받아서 파싱
-                if (!name_message.ParseFromString(data.substr(sizeof(Type)))) {
-                    cerr << "Failed to parse CSName." << endl;
-                }
-
-                break;
-            }
-
-            default:
-                cerr << "Unknown message type." << endl;
-                break;
         }
     }
 
