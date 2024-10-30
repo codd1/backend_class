@@ -934,9 +934,9 @@ class CSJoinRoom PROTOBUF_FINAL :
   // accessors -------------------------------------------------------
 
   enum : int {
-    kRoomIdFieldNumber = 1,
+    kRoomidFieldNumber = 1,
   };
-  // required int32 roomId = 1;
+  // required int32 roomid = 1;
   bool has_roomid() const;
   private:
   bool _internal_has_roomid() const;
@@ -3015,7 +3015,7 @@ inline void CSCreateRoom::unsafe_arena_set_allocated_title(
 
 // CSJoinRoom
 
-// required int32 roomId = 1;
+// required int32 roomid = 1;
 inline bool CSJoinRoom::_internal_has_roomid() const {
   bool value = (_has_bits_[0] & 0x00000001u) != 0;
   return value;
@@ -3031,7 +3031,7 @@ inline ::PROTOBUF_NAMESPACE_ID::int32 CSJoinRoom::_internal_roomid() const {
   return roomid_;
 }
 inline ::PROTOBUF_NAMESPACE_ID::int32 CSJoinRoom::roomid() const {
-  // @@protoc_insertion_point(field_get:mju.CSJoinRoom.roomId)
+  // @@protoc_insertion_point(field_get:mju.CSJoinRoom.roomid)
   return _internal_roomid();
 }
 inline void CSJoinRoom::_internal_set_roomid(::PROTOBUF_NAMESPACE_ID::int32 value) {
@@ -3040,7 +3040,7 @@ inline void CSJoinRoom::_internal_set_roomid(::PROTOBUF_NAMESPACE_ID::int32 valu
 }
 inline void CSJoinRoom::set_roomid(::PROTOBUF_NAMESPACE_ID::int32 value) {
   _internal_set_roomid(value);
-  // @@protoc_insertion_point(field_set:mju.CSJoinRoom.roomId)
+  // @@protoc_insertion_point(field_set:mju.CSJoinRoom.roomid)
 }
 
 // -------------------------------------------------------------------

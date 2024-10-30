@@ -44,10 +44,15 @@ private:
 
 class Room {
 public:
-    Room(const string& title) : title(title) {}
+    Room(int id, const string& title) : id_(id), title_(title) {}
 
-    string title;           // 방 제목
-    int member_count = 0;       // 방 멤버 수
+    int GetMemberNum() const { return member_num_; }
+    void JoinMember() { member_num_++; }
+    void LeaveMember() { member_num_--; }
+
+    int id_;
+    string title_;           // 방 제목
+    int member_num_ = 0;       // 방 멤버 수
 };
 
 class Server {
@@ -234,29 +239,64 @@ private:
                         return;
                     }
 
-                    // 채팅 메시지 파싱
                     CSCreateRoom room_message;
                     if (!room_message.ParseFromArray(buffer + real_data_bytes + 2, room_message_size)) {
                         cerr << "Failed to parse CSCreateRoom message." << endl;
                     } else {
-                        // 메시지 처리 (예: 채팅 메시지 출력)
                         string room_title = room_message.title();
                         int room_id = next_room_id++;
 
-                        Room new_room(room_title);
+                        Room new_room(room_id, room_title);
                         rooms.push_back(new_room);      // 방 목록에 새 방 추가
 
                         client.SetRoomId(room_id);      // 방 만들면서 방장이 방에 들어감
-                        new_room.member_count++;        // 방 멤버 수 추가
+                        new_room.JoinMember();          // 방 멤버 수 추가
 
-                        cout << "[" << client.GetPort() << "] 유저가 \"" << room_title << "\" 방을 생성했습니다. "  << endl;
+                        cout << "[시스템 메시지] " << client.GetName() << " 유저가 \"" << room_title << "\" 방을 생성했습니다. "  << endl;
                     }
 
-                    real_data_bytes += 2 + room_message_size; // 채팅 메시지 크기 추가
+                    real_data_bytes += 2 + room_message_size;
                     break;
                 }
-                case Type::CS_JOIN_ROOM:
+                case Type::CS_JOIN_ROOM: {
+                    if (total_bytes < real_data_bytes) {
+                        return;
+                    }
+                    
+                    uint16_t room_id_size;
+                    memcpy(&room_id_size, buffer + real_data_bytes, sizeof(room_id_size));
+                    room_id_size = ntohs(room_id_size);
+
+                    if (total_bytes < real_data_bytes + 2 + room_id_size) {
+                        return;
+                    }
+
+                    // 방 ID 파싱
+                    CSJoinRoom join_room_message;
+                    if (!join_room_message.ParseFromArray(buffer + real_data_bytes + 2, room_id_size)) {
+                        cerr << "Failed to parse CSJoinRoom message." << endl;
+                    } else {
+                        int room_id = join_room_message.roomid();
+
+                        // 방이 존재하는지 확인
+                        auto it = find_if(rooms.begin(), rooms.end(), [room_id](const Room &room) {
+                            return room.id_ == room_id;
+                        });
+
+                        if (it != rooms.end()) {
+                            // 방에 입장
+                            client.SetRoomId(room_id);
+                            it->JoinMember();
+                            cout << "[시스템 메시지] " << client.GetName() << " 유저가 방 " << room_id << "에 입장했습니다." << endl;
+                        } else {
+                            // 방이 존재하지 않는 경우 처리
+                            cerr << "존재하지 않는 방에 들어가려고 했습니다: " << room_id << endl;
+                        }
+                    }
+
+                    real_data_bytes += 2 + room_id_size;
                     break;
+                }
                 case Type::CS_CHAT: {
                     // 다음 메시지 크기 읽기 (채팅 텍스트)
                     if (total_bytes < real_data_bytes) {
@@ -315,8 +355,24 @@ private:
                 }
                 case Type::CS_ROOMS:
                     break;
-                case Type::CS_LEAVE_ROOM:
-                    break;
+                case Type::CS_LEAVE_ROOM: {
+                    /*int room_id = client.GetRoomId();
+
+                    // 해당 클라가 속해있는 방을 찾는다.
+                    auto it = find_if(rooms.begin(), rooms.end(), [room_id](const Room &room) {
+                        return room.id_ == room_id;
+                    });
+                    if (it != rooms.end()) {
+                        client.SetRoomId(0);    // 로비로 이동 (방 번호를 0으로 설정)
+                        it->LeaveMember();      // 방의 멤버 수 증가
+                        cout << "[시스템 메시지] " << client.GetName() << " 유저가 방 " << room_id << "을 떠났습니다." << endl;
+                    } else {
+                        // 방이 존재하지 않는 경우 처리
+                        cerr << "존재하지 않는 방에서 나가려고 했습니다: " << room_id << endl;
+                    }
+                    
+                    break;*/
+                }
                 case Type::CS_SHUTDOWN:
                     break;
                 default:

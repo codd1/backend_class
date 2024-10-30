@@ -470,7 +470,7 @@ const char descriptor_table_protodef_message_2eproto[] PROTOBUF_SECTION_VARIABLE
   "SC_ROOMS_RESULT\020\007\022\013\n\007SC_CHAT\020\010\022\025\n\021SC_SYS"
   "TEM_MESSAGE\020\t\"\026\n\006CSName\022\014\n\004name\030\001 \002(\t\"\t\n"
   "\007CSRooms\"\035\n\014CSCreateRoom\022\r\n\005title\030\001 \001(\t\""
-  "\034\n\nCSJoinRoom\022\016\n\006roomId\030\001 \002(\005\"\r\n\013CSLeave"
+  "\034\n\nCSJoinRoom\022\016\n\006roomid\030\001 \002(\005\"\r\n\013CSLeave"
   "Room\"\026\n\006CSChat\022\014\n\004text\030\001 \002(\t\"\014\n\nCSShutdo"
   "wn\"\035\n\014SCNameResult\022\r\n\005error\030\001 \001(\t\"w\n\rSCR"
   "oomsResult\022*\n\005rooms\030\001 \003(\0132\033.mju.SCRoomsR"
@@ -1461,7 +1461,7 @@ const char* CSJoinRoom::_InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID:
     ptr = ::PROTOBUF_NAMESPACE_ID::internal::ReadTag(ptr, &tag);
     CHK_(ptr);
     switch (tag >> 3) {
-      // required int32 roomId = 1;
+      // required int32 roomid = 1;
       case 1:
         if (PROTOBUF_PREDICT_TRUE(static_cast<::PROTOBUF_NAMESPACE_ID::uint8>(tag) == 8)) {
           _Internal::set_has_roomid(&has_bits);
@@ -1499,7 +1499,7 @@ failure:
   (void) cached_has_bits;
 
   cached_has_bits = _has_bits_[0];
-  // required int32 roomId = 1;
+  // required int32 roomid = 1;
   if (cached_has_bits & 0x00000001u) {
     target = stream->EnsureSpace(target);
     target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::WriteInt32ToArray(1, this->_internal_roomid(), target);
@@ -1517,7 +1517,7 @@ size_t CSJoinRoom::ByteSizeLong() const {
 // @@protoc_insertion_point(message_byte_size_start:mju.CSJoinRoom)
   size_t total_size = 0;
 
-  // required int32 roomId = 1;
+  // required int32 roomid = 1;
   if (_internal_has_roomid()) {
     total_size += 1 +
       ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::Int32Size(

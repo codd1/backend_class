@@ -45,7 +45,7 @@ message CSCreateRoom {
 }
 
 message CSJoinRoom {
-  required int32 roomId = 1;
+  required int32 roomid = 1;
 }
 
 message CSLeaveRoom {
