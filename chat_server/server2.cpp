@@ -20,13 +20,17 @@ using namespace mju;
 
 class Client {
 public:
-    Client() : socket_(-1) {}
-    Client(int socket) : socket_(socket) {}
+    Client() : socket_(-1), port_(0) {}
+    Client(int socket, const string& ip, int port) : socket_(socket), ip_(ip), port_(port) {}
 
     int GetSocket() const { return socket_; }
+    string GetIp() const { return ip_; }
+    int GetPort() const { return port_; }
 
 private:
     int socket_;
+    string ip_;
+    int port_;
 };
 
 class Server {
@@ -116,12 +120,14 @@ private:
         struct sockaddr_in client_sin;
         memset(&client_sin, 0, sizeof(client_sin));
         unsigned int client_sin_len = sizeof(client_sin);
+
         int client_sock = accept(passive_sock, (struct sockaddr *)&client_sin, &client_sin_len);
         if (client_sock < 0) {
             cerr << "accept() failed: " << strerror(errno) << endl;
             exit(1);
         }
 
+        char client_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &(client_sin.sin_addr), client_ip, INET_ADDRSTRLEN);
         client_port = ntohs(client_sin.sin_port);
 
@@ -129,7 +135,7 @@ private:
         FD_SET(client_sock, &rfds);
         max_fd = max(max_fd, client_sock);
 
-        clients.emplace_back(client_sock);
+        clients.emplace_back(client_sock, client_ip, client_port);
         cout << "새로운 클라이언트 접속 [('" << client_ip << "', " << client_port << ")]" << endl;
     }
 
@@ -155,7 +161,7 @@ private:
 
         if (recv_bytes <= 0) {      // 에러 처리
             if (recv_bytes == 0) {
-                cout << "클라이언트 [('" << client_ip << "', " << client_port << "):" << " ]: 상대방이 소켓을 닫았음" << endl;
+                cout << "클라이언트 [('" << client.GetIp() << "', " << client.GetPort() << "):" << " ]: 상대방이 소켓을 닫았음" << endl;
             } else {
                 cerr << "recv() failed: " << strerror(errno) << endl;
             }
@@ -170,7 +176,6 @@ private:
         }
 
         total_bytes += recv_bytes;
-        //cout << "Received data (bytes): " << total_bytes << endl;
 
         while (total_bytes >= 2) {      // 최소 메시지 크기인 2bytes 이상은 있어야 함
             uint16_t message_size;
@@ -196,39 +201,9 @@ private:
             size_t real_data_bytes = 2 + message_size;
 
             switch (type_message.type()) {
-                case Type::CS_NAME:{
-                    // 다음 메시지 크기 읽기 (채팅 텍스트)
-                    if (total_bytes < real_data_bytes) {
-                        return;
-                    }
-
-                    // 다음 2바이트를 읽어 메시지 크기
-                    uint16_t chat_message_size;
-                    memcpy(&chat_message_size, buffer + real_data_bytes, sizeof(chat_message_size));
-                    chat_message_size = ntohs(chat_message_size);
-
-                    // 메시지 크기에 따라 데이터가 있는지 확인
-                    if (total_bytes < real_data_bytes + 2 + chat_message_size) {
-                        //cout << "[Error] 메시지가 모두 도착하지 않았습니다." << endl;
-                        return;
-                    }
-
-                    // 채팅 메시지 파싱
-                    CSName name_message;
-                    if (!name_message.ParseFromArray(buffer + real_data_bytes + 2, chat_message_size)) {
-                        cerr << "Failed to parse CSName message." << endl;
-                    } else {
-                        // 메시지 처리 (예: 채팅 메시지 출력)
-                        cout << "[" << client_port << "] 유저의 이름이 " << name_message.name() << " (으)로 변경되었습니다." << endl;
-                    }
-
-                    real_data_bytes += 2 + chat_message_size; // 채팅 메시지 크기 추가
-                    break;
-                }
                 case Type::CS_CREATE_ROOM: {
                     // 다음 메시지 크기 읽기 (채팅 텍스트)
                     if (total_bytes < real_data_bytes) {
-                        cout << "[Error] 메시지가 모두 도착하지 않았습니다." << endl;
                         return;
                     }
 
@@ -239,7 +214,6 @@ private:
 
                     // 메시지 크기에 따라 데이터가 있는지 확인
                     if (total_bytes < real_data_bytes + 2 + chat_message_size) {
-                        //cout << "[Error] 메시지가 모두 도착하지 않았습니다." << endl;
                         return;
                     }
 
@@ -249,7 +223,7 @@ private:
                         cerr << "Failed to parse CSCreateRoom message." << endl;
                     } else {
                         // 메시지 처리 (예: 채팅 메시지 출력)
-                        cout << "[" << client_port << "] 유저가 \"" << room_message.title() << "\" 방을 생성했습니다. "  << endl;
+                        cout << "[" << client.GetPort() << "] 유저가 \"" << room_message.title() << "\" 방을 생성했습니다. "  << endl;
                     }
 
                     real_data_bytes += 2 + chat_message_size; // 채팅 메시지 크기 추가
@@ -260,7 +234,6 @@ private:
                 case Type::CS_CHAT: {
                     // 다음 메시지 크기 읽기 (채팅 텍스트)
                     if (total_bytes < real_data_bytes) {
-                        cout << "[Error] 메시지가 모두 도착하지 않았습니다." << endl;
                         return;
                     }
 
@@ -271,7 +244,6 @@ private:
 
                     // 메시지 크기에 따라 데이터가 있는지 확인
                     if (total_bytes < real_data_bytes + 2 + chat_message_size) {
-                        //cout << "[Error] 메시지가 모두 도착하지 않았습니다." << endl;
                         return;
                     }
 
@@ -281,7 +253,7 @@ private:
                         cerr << "Failed to parse CSChat message." << endl;
                     } else {
                         // 메시지 처리 (예: 채팅 메시지 출력)
-                        cout << "[" << client_port << "]: " << chat_message.text() << endl;
+                        cout << "[" << client.GetPort() << "]: " << chat_message.text() << endl;
                     }
 
                     real_data_bytes += 2 + chat_message_size; // 채팅 메시지 크기 추가
@@ -309,7 +281,7 @@ private:
                     } else {
                         // 메시지 처리 (예: 채팅 메시지 출력)
                         cout << "Name message received: " << name_message.name() << endl;
-                        cout << "[시스템 메시지] " << client_port << " 유저의 이름이 " << name_message.name() << " 으로 변경되었습니다." << endl;
+                        cout << "[시스템 메시지] " << client.GetPort() << " 유저의 이름이 " << name_message.name() << " 으로 변경되었습니다." << endl;
                     }
 
                     real_data_bytes += 2 + name_message_size; // 채팅 메시지 크기 추가
