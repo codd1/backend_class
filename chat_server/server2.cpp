@@ -212,8 +212,13 @@ private:
             // 타입 메시지 파싱
             Type type_message;
             if (!type_message.ParseFromArray(buffer + 2, message_size)) {
-                cerr << "[Error] Type 메시지 파싱에 실패했습니다." << endl;
-                return;
+                //cerr << "[Error] Type 메시지 파싱에 실패했습니다. 전체 메시지를 건너뜁니다." << endl;
+                
+                // 메시지 크기만큼 전체를 건너뛰고 다음 메시지로 이동 (한 번 파싱 실패했을 때 다 밀리는 문제 방지)
+                memmove(buffer, buffer + 2 + message_size, total_bytes - (2 + message_size));
+                total_bytes -= (2 + message_size);
+
+                continue;
             }
 
             // 타입 메시지 출력
@@ -356,22 +361,24 @@ private:
                 case Type::CS_ROOMS:
                     break;
                 case Type::CS_LEAVE_ROOM: {
-                    /*int room_id = client.GetRoomId();
+                    int room_id = client.GetRoomId();
 
                     // 해당 클라가 속해있는 방을 찾는다.
                     auto it = find_if(rooms.begin(), rooms.end(), [room_id](const Room &room) {
                         return room.id_ == room_id;
                     });
+
                     if (it != rooms.end()) {
                         client.SetRoomId(0);    // 로비로 이동 (방 번호를 0으로 설정)
-                        it->LeaveMember();      // 방의 멤버 수 증가
+                        it->LeaveMember();      // 방의 멤버 수 감소
                         cout << "[시스템 메시지] " << client.GetName() << " 유저가 방 " << room_id << "을 떠났습니다." << endl;
                     } else {
                         // 방이 존재하지 않는 경우 처리
                         cerr << "존재하지 않는 방에서 나가려고 했습니다: " << room_id << endl;
+                        return;
                     }
                     
-                    break;*/
+                    break;
                 }
                 case Type::CS_SHUTDOWN:
                     break;
