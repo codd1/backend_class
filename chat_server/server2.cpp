@@ -345,44 +345,8 @@ private:
                     if (total_bytes < real_data_bytes + 2 + name_message_size) {
                         return;
                     }
-                    // 채팅 메시지 파싱
-                    CSName name_message;
-                    string system_message;
-                    if (!name_message.ParseFromArray(buffer + real_data_bytes + 2, name_message_size)) {
-                        cerr << "Failed to parse CSName message." << endl;
-                    } else {
-                        // 메시지 처리 (예: 채팅 메시지 출력)
-                        client.SetName(name_message.name());
 
-                        system_message = "유저의 이름이 " + name_message.name() + " 으로 변경되었습니다.";
-                        cout << "[시스템 메시지] " << client.GetPort() << " " << system_message << endl;
-                    }
-
-                    SCSystemMessage system_message_data;
-                    system_message_data.set_text(system_message);
-
-                    Type type_message;
-                    type_message.set_type(Type::SC_SYSTEM_MESSAGE);
-
-                    string serialized_message;
-                    string serialized_type;
-
-                    // type,system 메시지를 직렬화
-                    type_message.SerializeToString(&serialized_type);
-                    system_message_data.SerializeToString(&serialized_message);
-
-                    // 메시지 길이 전송
-                    uint16_t message_length = htons(static_cast<uint16_t>(serialized_type.size()));
-                    send(client.GetSocket(), &message_length, sizeof(uint16_t), 0);
-
-                    // 직렬화된 타입 전송
-                    send(client.GetSocket(), serialized_type.c_str(), serialized_type.size(), 0);
-
-                    message_length = htons(static_cast<uint16_t>(serialized_message.size()));
-                    send(client.GetSocket(), &message_length, sizeof(uint16_t), 0);
-
-                    // 직렬화된 시스템 메시지 전송
-                    cout << send(client.GetSocket(), serialized_message.c_str(), serialized_message.size(), 0) << endl;
+                    ProcessNameCommand(client, buffer, real_data_bytes, name_message_size);
 
                     real_data_bytes += 2 + name_message_size; // 채팅 메시지 크기 추가
                     break;
@@ -420,6 +384,47 @@ private:
             memmove(buffer, buffer + real_data_bytes, total_bytes - real_data_bytes);
             total_bytes -= real_data_bytes;
         }
+    }
+
+    void ProcessNameCommand(Client &client, char* buffer, size_t real_data_bytes, uint16_t name_message_size){
+        // 채팅 메시지 파싱
+        CSName name_message;
+        string system_message;
+        if (!name_message.ParseFromArray(buffer + 2 + real_data_bytes, name_message_size)) {
+            cerr << "Failed to parse CSName message." << endl;
+        } else {
+            // 메시지 처리 (예: 채팅 메시지 출력)
+            client.SetName(name_message.name());
+
+            system_message = "유저의 이름이 " + name_message.name() + " 으로 변경되었습니다.";
+            cout << "[시스템 메시지] " << client.GetPort() << " " << system_message << endl;
+        }
+
+        SCSystemMessage system_message_data;
+        system_message_data.set_text(system_message);
+
+        Type type_message;
+        type_message.set_type(Type::SC_SYSTEM_MESSAGE);
+
+        string serialized_message;
+        string serialized_type;
+
+        // type,system 메시지를 직렬화
+        type_message.SerializeToString(&serialized_type);
+        system_message_data.SerializeToString(&serialized_message);
+
+        // 메시지 길이 전송
+        uint16_t message_length = htons(static_cast<uint16_t>(serialized_type.size()));
+        send(client.GetSocket(), &message_length, sizeof(uint16_t), 0);
+
+        // 직렬화된 타입 전송
+        send(client.GetSocket(), serialized_type.c_str(), serialized_type.size(), 0);
+
+        message_length = htons(static_cast<uint16_t>(serialized_message.size()));
+        send(client.GetSocket(), &message_length, sizeof(uint16_t), 0);
+
+        // 직렬화된 시스템 메시지 전송
+        send(client.GetSocket(), serialized_message.c_str(), serialized_message.size(), 0);
     }
 
     bool RecvErrorHandling(int socket, ssize_t recv_bytes) {
