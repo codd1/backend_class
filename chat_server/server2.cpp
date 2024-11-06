@@ -39,11 +39,12 @@ private:
     int port_;
 
     string name_ = "unknown";
-    int room_id_ = 0;
+    int room_id_ = -1;
 };
 
 class Room {
 public:
+    Room(): id_(-1), title_(""), member_num_(0){}       // 기본 생성자 추가
     Room(int id, const string& title) : id_(id), title_(title) {}
 
     int GetMemberNum() const { return member_num_; }
@@ -52,7 +53,7 @@ public:
 
     int id_;
     string title_;           // 방 제목
-    int member_num_ = 0;       // 방 멤버 수
+    int member_num_;       // 방 멤버 수
 };
 
 class Server {
@@ -252,7 +253,7 @@ private:
                         int room_id = next_room_id++;
 
                         Room new_room(room_id, room_title);
-                        rooms.push_back(new_room);      // 방 목록에 새 방 추가
+                        rooms[room_id] = new_room;      // 방 목록에 새 방 추가
 
                         client.SetRoomId(room_id);      // 방 만들면서 방장이 방에 들어감
                         new_room.JoinMember();          // 방 멤버 수 추가
@@ -284,14 +285,10 @@ private:
                         int room_id = join_room_message.roomid();
 
                         // 방이 존재하는지 확인
-                        auto it = find_if(rooms.begin(), rooms.end(), [room_id](const Room &room) {
-                            return room.id_ == room_id;
-                        });
-
-                        if (it != rooms.end()) {
+                        if(rooms[room_id].id_ != -1){
                             // 방에 입장
                             client.SetRoomId(room_id);
-                            it->JoinMember();
+                            rooms[room_id].JoinMember();
                             cout << "[시스템 메시지] " << client.GetName() << " 유저가 방 " << room_id << "에 입장했습니다." << endl;
                         } else {
                             // 방이 존재하지 않는 경우 처리
@@ -324,7 +321,14 @@ private:
                         cerr << "Failed to parse CSChat message." << endl;
                     } else {
                         // 메시지 처리 (예: 채팅 메시지 출력)
-                        cout << "[" << client.GetRoomId() << "] " << "[" << client.GetName() << "]: " << chat_message.text() << endl;
+                        int room_id = client.GetRoomId();
+
+                        if(room_id != -1){
+                            string title = rooms[client.GetRoomId()].title_;
+                            cout << "[" << title << "] " << "[" << client.GetName() << "]: " << chat_message.text() << endl;
+                        } else{
+                            cout << "[로비] [" << client.GetName() << "]: " << chat_message.text() << endl;
+                        }
                     }
 
                     real_data_bytes += 2 + chat_message_size; // 채팅 메시지 크기 추가
@@ -478,8 +482,8 @@ private:
     mutex m;
     condition_variable cv;
 
-    vector<Room> rooms;
-    int next_room_id = 1;
+    vector<Room> rooms{1000};   // 방 최대 갯수는 1000개
+    int next_room_id = 0;
 };
 
 int main(int argc, char *argv[]) {
