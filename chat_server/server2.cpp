@@ -183,7 +183,7 @@ private:
             exit(1);
         }
 
-        // 기존의 파일 상태 플래그를 얻은 뒤(fcntl()), 그 값에 O_NONBLOCK을 비트 OR 연산자로 추가하여, 기존 플래그를 그대로 유지하면서 소켓을 Non-blocking 모드로 변경
+        // 기존의 파일 상태 플래그를 얻은 뒤(fcntl()), 그 값에 O_NONBLOCK을 비트 OR 연산자로 추가하여, 기존 플래그를 그대로 유지하면서 소켓을 Non-blocking 모드로 변경 
         if (fcntl(socket, F_SETFL, flag | O_NONBLOCK) < 0) {
             cerr << "fcntl() failed: " << strerror(errno) << endl;
             exit(1);
