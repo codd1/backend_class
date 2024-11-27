@@ -78,10 +78,23 @@ public:
         while (1) {
             temp_rfds = rfds;
 
-            int active_socket_count = select(max_fd + 1, &temp_rfds, NULL, NULL, NULL);
+            /*
+                select 함수의 실행 횟수
+                    - polling처럼 반복 호출되며, 파일 디스크립터 집합의 이벤트를 감지할 때 반환 (select의 반환 횟수와 값은 이벤트의 발생 타이밍에 따라 달라짐)
 
-            if (active_socket_count <= 0) {
+                return 값:
+                    - 양수 값: 읽기, 쓰기, 예외 발생 등의 상태 변화가 발생한 파일 디스크립터의 개수
+                    - 0: 타임아웃이 발생해 상태 변화 X
+                    - -1: 함수 호출 중 에러 발생 (ex: 잘못된 인자 전달, 시스템 자원 부족 등)
+            */
+            int active_socket_count = select(max_fd + 1, &temp_rfds, NULL, NULL, NULL); // 새로운 클라이언트가 서버에 연결을 시도하면 select 함수가 passive 소켓에 대한 읽기 이벤트 감지
+
+            if (active_socket_count < 0) {
                 cerr << "select() failed: " << strerror(errno) << endl;
+                break;      // 이벤트 루프를 종료시키므로 select에 의해 대기 중인 상태에서 벗어남. 스레드 종료X. 새로운 클라 연결이 있다면 다른 스레드가 처리하게 됨.
+                            // TODO: 이렇게 되면 이 스레드는 낭비되는 스레드가 되기 때문에 다른 처리 필요.
+            } else if(active_socket_count == 0){        // select 함수의 마지막 인자(timeout)가 NULL이기 때문에 리턴 값으로 절대 0이 나올 수 없음.
+                cerr << "select() timeout: " << strerror(errno) << endl;    // 하지만 이후 코드가 수정되는 것을 고려해 미리 리턴 값 0의 경우도 만듦.
                 break;
             }
 
@@ -163,12 +176,14 @@ private:
     }
 
     void SetNonBlocking(int socket) {
+        // fcntl(): 파일 디스크립터의 속성이나 플래그를 제어하는 함수
         int flag = fcntl(socket, F_GETFL, 0);
         if (flag < 0) {
             cerr << "fcntl() failed: " << strerror(errno) << endl;
             exit(1);
         }
 
+        // 기존의 파일 상태 플래그를 얻은 뒤(fcntl()), 그 값에 O_NONBLOCK을 비트 OR 연산자로 추가하여, 기존 플래그를 그대로 유지하면서 소켓을 Non-blocking 모드로 변경
         if (fcntl(socket, F_SETFL, flag | O_NONBLOCK) < 0) {
             cerr << "fcntl() failed: " << strerror(errno) << endl;
             exit(1);
